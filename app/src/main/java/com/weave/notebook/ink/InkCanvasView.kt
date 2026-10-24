@@ -1,0 +1,282 @@
+package com.weave.notebook.ink
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.util.AttributeSet
+import android.view.MotionEvent
+import android.view.View
+import androidx.core.content.ContextCompat
+import com.weave.notebook.R
+import com.weave.notebook.geom.ViewportTransform
+import com.weave.notebook.gesture.GestureArbiter
+import com.weave.notebook.guards.GuardEdge
+import com.weave.notebook.guards.PalmGuardController
+import com.weave.notebook.model.BrushKind
+import com.weave.notebook.model.PageSpec
+import com.weave.notebook.model.PaperType
+import com.weave.notebook.model.StrokeRecord
+import com.weave.notebook.render.PageCanvasRenderer
+import java.util.UUID
+
+
+/**
+ * Custom Canvas drawing View with Write/Navigate gesture arbitration.
+ */
+class InkCanvasView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
+
+    private val renderer = PageCanvasRenderer()
+    val viewport = ViewportTransform()
+    val pipeline = RawInkPipeline()
+    val arbiter = GestureArbiter()
+    val palmGuards = PalmGuardController()
+
+    private val blockedPointerIds = HashSet<Int>()
+    private val guardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = 0x66252A2D
+    }
+    private val guardStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = 0xFF252A2D.toInt()
+    }
+
+
+    var page: PageSpec = PageSpec(pageId = UUID.randomUUID().toString(), paperType = PaperType.RULED)
+        set(value) {
+            field = value
+            pipeline.configureStroke(value.pageId, brush, colorArgb, widthMm)
+            invalidate()
+        }
+
+    var strokes: MutableList<StrokeRecord> = mutableListOf()
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var brush: BrushKind = BrushKind.PEN
+        set(value) {
+            field = value
+            pipeline.configureStroke(page.pageId, value, colorArgb, widthMm)
+        }
+
+    var colorArgb: Int = 0xFF000000.toInt()
+        set(value) {
+            field = value
+            pipeline.configureStroke(page.pageId, brush, value, widthMm)
+        }
+
+    var widthMm: Float = 0.45f
+        set(value) {
+            field = value
+            pipeline.configureStroke(page.pageId, brush, colorArgb, value)
+        }
+
+    var inkEnabled: Boolean = true
+        set(value) {
+            field = value
+            arbiter.setMode(
+                if (value) GestureArbiter.Mode.WRITE else GestureArbiter.Mode.NAVIGATE
+            )
+        }
+
+    var onStrokeCommitted: ((StrokeRecord) -> Unit)? = null
+
+    private val livePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val livePath = Path()
+    private val pagePoint = FloatArray(2)
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) {
+            viewport.setViewSize(w.toFloat(), h.toFloat())
+            viewport.fitPage()
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val index = event.actionIndex
+                val screenX = event.getX(index)
+                val screenY = event.getY(index)
+                val pointerId = event.getPointerId(index)
+                if (palmGuards.blocksInkOrigin(screenX, screenY, width.toFloat(), height.toFloat())) {
+                    blockedPointerIds.add(pointerId)
+                    // Guard contacts never become ink, even if dragged outside.
+                    invalidate()
+                    return true
+                }
+                val touch = touchFrom(event, index)
+                when (arbiter.onDown(touch)) {
+                    GestureArbiter.Action.START_STROKE -> {
+                        pipeline.onDown(
+                            RawInkPipeline.PointerPoint(touch.pointerId, touch.xMm, touch.yMm, touch.tMs)
+                        )
+                    }
+                    GestureArbiter.Action.CANCEL_STROKE -> pipeline.onCancel()
+                    else -> Unit
+                }
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val touches = buildList {
+                    for (h in 0 until event.historySize) {
+                        for (i in 0 until event.pointerCount) {
+                            if (event.getPointerId(i) in blockedPointerIds) continue
+                            add(historicalTouch(event, i, h))
+                        }
+                    }
+                    for (i in 0 until event.pointerCount) {
+                        if (event.getPointerId(i) in blockedPointerIds) continue
+                        add(touchFrom(event, i))
+                    }
+                }
+                if (touches.isEmpty()) {
+                    invalidate()
+                    return true
+                }
+                when (arbiter.onMove(touches)) {
+                    GestureArbiter.Action.APPEND_STROKE -> {
+                        val owner = arbiter.activeStrokePointerId()
+                        pipeline.onMove(
+                            touches.filter { it.pointerId == owner }.map {
+                                RawInkPipeline.PointerPoint(it.pointerId, it.xMm, it.yMm, it.tMs)
+                            }
+                        )
+                    }
+                    GestureArbiter.Action.CANCEL_STROKE -> pipeline.onCancel()
+                    GestureArbiter.Action.PAN -> {
+                        val (dxMm, dyMm) = arbiter.panDeltaMm()
+                        val dxPx = dxMm / viewport.mmPerPixel()
+                        val dyPx = dyMm / viewport.mmPerPixel()
+                        viewport.panBy(dxPx, dyPx)
+                    }
+                    GestureArbiter.Action.PINCH -> {
+                        val factor = arbiter.pinchScaleFactor()
+                        val newZoom = (viewport.zoom * factor).coerceIn(
+                            ViewportTransform.MIN_ZOOM,
+                            ViewportTransform.MAX_ZOOM
+                        )
+                        viewport.setZoom(newZoom, width / 2f, height / 2f)
+                    }
+                    else -> Unit
+                }
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                val id = event.getPointerId(event.actionIndex)
+                if (blockedPointerIds.remove(id)) {
+                    invalidate()
+                    return true
+                }
+                val touch = touchFrom(event, event.actionIndex)
+                when (arbiter.onUp(id)) {
+                    GestureArbiter.Action.END_STROKE -> {
+                        val committed = pipeline.onUp(
+                            RawInkPipeline.PointerPoint(touch.pointerId, touch.xMm, touch.yMm, touch.tMs)
+                        )
+                        if (committed != null) {
+                            strokes.add(committed)
+                            onStrokeCommitted?.invoke(committed)
+                        }
+                    }
+                    GestureArbiter.Action.CANCEL_STROKE -> pipeline.onCancel()
+                    else -> Unit
+                }
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                blockedPointerIds.clear()
+                arbiter.onCancel()
+                pipeline.onCancel()
+                invalidate()
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        canvas.drawColor(ContextCompat.getColor(context, R.color.workspace_bg))
+        renderer.drawPage(canvas, viewport, page, strokes)
+        drawProvisional(canvas)
+        drawGuardOverlay(canvas)
+    }
+
+    private fun drawGuardOverlay(canvas: Canvas) {
+        if (!palmGuards.guard.enabled) return
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val s = palmGuards.guard.sizePx
+        when (palmGuards.guard.edge) {
+            GuardEdge.BOTTOM -> canvas.drawRect(0f, h - s, w, h, guardPaint)
+            GuardEdge.LEFT -> canvas.drawRect(0f, 0f, s, h, guardPaint)
+            GuardEdge.RIGHT -> canvas.drawRect(w - s, 0f, w, h, guardPaint)
+        }
+        // Drag handle cue (non-interactive chrome for now; resize via controller API).
+        when (palmGuards.guard.edge) {
+            GuardEdge.BOTTOM -> canvas.drawLine(w / 2f - 40f, h - s, w / 2f + 40f, h - s, guardStrokePaint)
+            GuardEdge.LEFT -> canvas.drawLine(s, h / 2f - 40f, s, h / 2f + 40f, guardStrokePaint)
+            GuardEdge.RIGHT -> canvas.drawLine(w - s, h / 2f - 40f, w - s, h / 2f + 40f, guardStrokePaint)
+        }
+    }
+
+    private fun drawProvisional(canvas: Canvas) {
+        val samples = pipeline.liveSamples.ifEmpty { pipeline.provisionalSamples }
+        if (samples.isEmpty()) return
+
+        livePaint.color = colorArgb
+        livePaint.strokeWidth = widthMm * (1f / viewport.mmPerPixel())
+        livePath.reset()
+        viewport.pageToScreen(samples[0].xMm, samples[0].yMm, pagePoint)
+        livePath.moveTo(pagePoint[0], pagePoint[1])
+        if (samples.size == 1) {
+            livePath.lineTo(pagePoint[0] + 0.5f, pagePoint[1])
+        } else {
+            for (i in 1 until samples.size) {
+                viewport.pageToScreen(samples[i].xMm, samples[i].yMm, pagePoint)
+                livePath.lineTo(pagePoint[0], pagePoint[1])
+            }
+        }
+        canvas.drawPath(livePath, livePaint)
+    }
+
+    private fun touchFrom(event: MotionEvent, index: Int): GestureArbiter.Touch {
+        viewport.screenToPage(event.getX(index), event.getY(index), pagePoint)
+        return GestureArbiter.Touch(
+            pointerId = event.getPointerId(index),
+            xMm = pagePoint[0],
+            yMm = pagePoint[1],
+            tMs = event.eventTime
+        )
+    }
+
+    private fun historicalTouch(event: MotionEvent, index: Int, historyPos: Int): GestureArbiter.Touch {
+        viewport.screenToPage(
+            event.getHistoricalX(index, historyPos),
+            event.getHistoricalY(index, historyPos),
+            pagePoint
+        )
+        return GestureArbiter.Touch(
+            pointerId = event.getPointerId(index),
+            xMm = pagePoint[0],
+            yMm = pagePoint[1],
+            tMs = event.getHistoricalEventTime(historyPos)
+        )
+    }
+}
