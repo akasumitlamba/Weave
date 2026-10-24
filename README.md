@@ -55,3 +55,9 @@ Do not squash, rebase published branches, or combine numbered PRs.
 
 `.github/workflows/ci.yml` runs unit tests, lint, and `assembleDebug` for pushes and
 pull requests targeting `main` or any `milestone/**` base branch.
+
+## Review handoff
+
+See `docs/REVIEW_INDEX.md` for the 24-PR stack, merge order, simulated merge evidence,
+and device gates marked NOT RUN. Backup guide: `docs/RELEASE.md`.
+
