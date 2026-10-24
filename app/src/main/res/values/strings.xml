@@ -39,6 +39,14 @@
     <string name="mode_write">Write</string>
     <string name="mode_navigate">Navigate</string>
     <string name="palm_guard">Palm guard</string>
-    <string name="palm_guard_hint">Palm guards block touch locally. Passive is not true hardware palm rejection.</string>
+    <string name="palm_guard_hint">Palm guards block touch locally. This is not true hardware palm rejection.</string>
+    <string name="cancel">Cancel</string>
+    <string name="create">Create</string>
+    <string name="rename">Rename</string>
+    <string name="duplicate">Duplicate</string>
+    <string name="delete">Delete</string>
+    <string name="delete_confirm">Delete \"%1$s\"? This cannot be undone.</string>
+    <string name="note_name_hint">Note name</string>
+    <string name="note_meta_format">%1$d pages · %2$s</string>
+    <string name="more_menu">⋮</string>
 </resources>
-
