@@ -6,6 +6,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import android.widget.Toast
 import com.weave.notebook.R
+import com.weave.notebook.command.CommandHistory
+import com.weave.notebook.command.EditorCommand
+import com.weave.notebook.command.StrokeEraser
 import com.weave.notebook.databinding.ActivityEditorBinding
 import com.weave.notebook.guards.GuardEdge
 import com.weave.notebook.model.BrushKind
@@ -13,6 +16,7 @@ import com.weave.notebook.model.PageSpec
 import com.weave.notebook.model.PaperType
 import com.weave.notebook.tools.ToolSettings
 import java.util.UUID
+
 
 
 
@@ -24,6 +28,8 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var binding: ActivityEditorBinding
     private val chrome = EditorChromeController()
     private var toolSettings = ToolSettings()
+    private val history = CommandHistory()
+
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +60,30 @@ class EditorActivity : AppCompatActivity() {
         )
         binding.inkCanvas.brush = BrushKind.PEN
         binding.inkCanvas.widthMm = 0.45f
+        binding.inkCanvas.onStrokeCommitted = { stroke ->
+            if (toolSettings.brush == BrushKind.ERASER) {
+                // Eraser tool: treat tap/stroke center as whole-stroke erase.
+                val mid = stroke.samples.getOrNull(stroke.samples.size / 2)
+                binding.inkCanvas.strokes.removeAll { it.strokeId == stroke.strokeId }
+                if (mid != null) {
+                    val hit = StrokeEraser.hitTest(
+                        binding.inkCanvas.strokes.toList(),
+                        mid.xMm,
+                        mid.yMm,
+                        radiusMm = toolSettings.widthMm
+                    )
+                    if (hit != null) {
+                        binding.inkCanvas.strokes.remove(hit)
+                        history.push(EditorCommand.EraseStroke(hit))
+                    }
+                }
+            } else {
+                history.push(EditorCommand.AddStroke(stroke))
+            }
+            chrome.setHistory(history.canUndo, history.canRedo)
+            renderChrome()
+            binding.inkCanvas.invalidate()
+        }
 
         wireChrome()
         renderChrome()
@@ -79,8 +109,8 @@ class EditorActivity : AppCompatActivity() {
         bindTool(binding.toolEraser, ToolKind.ERASER)
         bindTool(binding.toolHand, ToolKind.HAND)
 
-        binding.undoButton.setOnClickListener { /* history in PR 10 */ }
-        binding.redoButton.setOnClickListener { /* history in PR 10 */ }
+        binding.undoButton.setOnClickListener { applyUndo() }
+        binding.redoButton.setOnClickListener { applyRedo() }
         binding.pagesButton.setOnClickListener { /* page drawer in PR 15 */ }
         binding.exportButton.setOnClickListener { /* export in PR 20 */ }
 
@@ -135,6 +165,36 @@ class EditorActivity : AppCompatActivity() {
             if (tool == ToolKind.HAND) chrome.setWriteMode(false) else chrome.setWriteMode(true)
             renderChrome()
         }
+    }
+
+    private fun applyUndo() {
+        when (val cmd = history.undo()) {
+            is EditorCommand.AddStroke -> binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.stroke.strokeId }
+            is EditorCommand.EraseStroke -> binding.inkCanvas.strokes.add(cmd.stroke)
+            is EditorCommand.ReplaceStroke -> {
+                binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.after.strokeId }
+                binding.inkCanvas.strokes.add(cmd.before)
+            }
+            null -> Unit
+        }
+        chrome.setHistory(history.canUndo, history.canRedo)
+        renderChrome()
+        binding.inkCanvas.invalidate()
+    }
+
+    private fun applyRedo() {
+        when (val cmd = history.redo()) {
+            is EditorCommand.AddStroke -> binding.inkCanvas.strokes.add(cmd.stroke)
+            is EditorCommand.EraseStroke -> binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.stroke.strokeId }
+            is EditorCommand.ReplaceStroke -> {
+                binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.before.strokeId }
+                binding.inkCanvas.strokes.add(cmd.after)
+            }
+            null -> Unit
+        }
+        chrome.setHistory(history.canUndo, history.canRedo)
+        renderChrome()
+        binding.inkCanvas.invalidate()
     }
 
     private fun applyZoomToPreview() {
