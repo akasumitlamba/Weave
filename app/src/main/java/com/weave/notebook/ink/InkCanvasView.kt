@@ -237,8 +237,9 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     private fun drawProvisional(canvas: Canvas) {
-        val samples = pipeline.provisionalSamples
+        val samples = pipeline.liveSamples.ifEmpty { pipeline.provisionalSamples }
         if (samples.isEmpty()) return
+
         livePaint.color = colorArgb
         livePaint.strokeWidth = widthMm * (1f / viewport.mmPerPixel())
         livePath.reset()

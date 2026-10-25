@@ -3,14 +3,18 @@ package com.weave.notebook.ink
 import com.weave.notebook.model.BrushKind
 import com.weave.notebook.model.StrokeRecord
 import com.weave.notebook.model.StrokeSample
+import com.weave.notebook.smooth.SmoothingLevel
+import com.weave.notebook.smooth.StrokeSmoother
 import java.util.UUID
+
 
 /**
  * Immediate live ink capture using pointer IDs and ordered samples.
  * Pure logic so unit tests can replay without MotionEvent / Robolectric.
  */
 class RawInkPipeline(
-    private val maxTransientSamples: Int = 20_000
+    private val maxTransientSamples: Int = 20_000,
+    val smoother: StrokeSmoother = StrokeSmoother(SmoothingLevel.LOW)
 ) {
     data class PointerPoint(
         val pointerId: Int,
@@ -27,13 +31,19 @@ class RawInkPipeline(
     var activePointerId: Int? = null
         private set
 
-    private val provisional = ArrayList<StrokeSample>(256)
+    private val rawProvisional = ArrayList<StrokeSample>(256)
+    private val liveProvisional = ArrayList<StrokeSample>(256)
     private var brush: BrushKind = BrushKind.PEN
     private var colorArgb: Int = 0xFF000000.toInt()
     private var widthMm: Float = 0.45f
     private var pageId: String = ""
 
-    val provisionalSamples: List<StrokeSample> get() = provisional.toList()
+    /** Raw samples for recoverability. */
+    val provisionalSamples: List<StrokeSample> get() = rawProvisional.toList()
+
+    /** Filtered samples for live overlay. */
+    val liveSamples: List<StrokeSample> get() = liveProvisional.toList()
+
 
     fun configureStroke(pageId: String, brush: BrushKind, colorArgb: Int, widthMm: Float) {
         this.pageId = pageId
@@ -50,7 +60,9 @@ class RawInkPipeline(
         if (phase == Phase.DRAWING) return false
         phase = Phase.DRAWING
         activePointerId = point.pointerId
-        provisional.clear()
+        rawProvisional.clear()
+        liveProvisional.clear()
+        smoother.resetLive()
         append(point)
         return true
     }
@@ -81,7 +93,8 @@ class RawInkPipeline(
             reset()
             return false
         }
-        provisional.clear()
+        rawProvisional.clear()
+        liveProvisional.clear()
         reset()
         return true
     }
@@ -89,26 +102,33 @@ class RawInkPipeline(
     fun reset() {
         phase = Phase.IDLE
         activePointerId = null
-        provisional.clear()
+        rawProvisional.clear()
+        liveProvisional.clear()
+        smoother.resetLive()
     }
 
     private fun append(point: PointerPoint) {
-        if (provisional.size >= maxTransientSamples) {
-            // Bound memory: drop oldest interior sample, keep endpoints trend.
-            if (provisional.size > 2) provisional.removeAt(1)
+        if (rawProvisional.size >= maxTransientSamples) {
+            if (rawProvisional.size > 2) {
+                rawProvisional.removeAt(1)
+                if (liveProvisional.size > 2) liveProvisional.removeAt(1)
+            }
         }
-        provisional += StrokeSample(point.xMm, point.yMm, point.tMs)
+        val raw = StrokeSample(point.xMm, point.yMm, point.tMs)
+        rawProvisional += raw
+        liveProvisional += smoother.filterLive(raw)
     }
 
     private fun commitProvisional(): StrokeRecord {
+        // Store raw for recoverability; optional simplification can be derived later.
         return StrokeRecord(
             strokeId = UUID.randomUUID().toString(),
             pageId = pageId,
-            samples = provisional.toList(),
+            samples = rawProvisional.toList(),
             brush = brush,
             colorArgb = colorArgb,
             widthMm = widthMm,
-            smoothingVersion = 0
+            smoothingVersion = StrokeSmoother.SMOOTHING_VERSION
         )
     }
 }
