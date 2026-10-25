@@ -100,9 +100,4 @@ class InputProbeRecorderTest {
         assertThat(verified.stylusIdentity).isEqualTo(StylusIdentityFinding.STYLUS_DISTINCT)
     }
 
-    @Test
-    fun captureSteps_areDocumented() {
-        assertThat(InputProbeActivity.CAPTURE_STEPS).contains("TCL TAB 10s")
-        assertThat(InputProbeActivity.CAPTURE_STEPS).contains("CANCEL")
-    }
 }

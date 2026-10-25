@@ -1,275 +1,306 @@
 package com.weave.notebook.ui
 
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.RectF
 import android.os.Bundle
-import android.widget.Button
+import android.view.Gravity
+import android.view.View
+import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import android.widget.Toast
-import com.weave.notebook.R
-import com.weave.notebook.command.CommandHistory
-import com.weave.notebook.command.EditorCommand
+import com.weave.notebook.data.*
+import com.weave.notebook.ink.InkCanvasView
+import com.weave.notebook.model.*
+import com.weave.notebook.guards.*
+import com.weave.notebook.smooth.SmoothingLevel
+import com.weave.notebook.tools.BrushCatalog
+import com.weave.notebook.render.PagePreviewView
 import com.weave.notebook.command.StrokeEraser
-import com.weave.notebook.databinding.ActivityEditorBinding
-import com.weave.notebook.guards.GuardEdge
-import com.weave.notebook.model.BrushKind
-import com.weave.notebook.model.PageSpec
-import com.weave.notebook.model.PaperType
-import com.weave.notebook.tools.ToolSettings
+import com.weave.notebook.ui.NativeUi.dp
 import java.util.UUID
 
+class EditorActivity: AppCompatActivity() {
+    private data class Session(var note:NotebookDocument, var index:Int=0, val history:NotebookHistory=NotebookHistory(), var revision:Int=0,
+        var saved:Int=0, var failed:Boolean=false, var observer:(()->Unit)?=null, var zoom:Float=1f,var panX:Float=0f,var panY:Float=0f)
+    private lateinit var session:Session
+    private lateinit var root:LinearLayout
+    private lateinit var canvas:InkCanvasView
+    private lateinit var strip:InkCanvasView
+    private lateinit var overview:PagePreviewView
+    private lateinit var stripBox:LinearLayout
+    private lateinit var pageRail:LinearLayout
+    private lateinit var tools:LinearLayout
+    private lateinit var options:LinearLayout
+    private lateinit var status:TextView
+    private lateinit var pageLabel:TextView
+    private lateinit var zoomLabel:TextView
+    private lateinit var undo:Button
+    private lateinit var redo:Button
+    private lateinit var writeButton:Button
+    private lateinit var navigateButton:Button
+    private val prefs by lazy {getSharedPreferences("writing",0)}
+    private var tool=ToolKind.PEN
+    private var write=true
+    private var brush=BrushKind.PEN
+    private var color=Color.BLACK
+    private var strokeWidth=0.45f
+    private var shapes=false
+    private var smoothing=SmoothingLevel.LOW
+    private var stripVisible=false
+    private var stripLeft=15f
+    private var stripTop=40f
+    private var exitAfterSave=false
+    private var exportAfterSave=false
+    private var loading=true
 
-
-
-/**
- * Editor shell with live raw Pen ink (PR 05). Gesture modes refined in PR 06.
- */
-class EditorActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityEditorBinding
-    private val chrome = EditorChromeController()
-    private var toolSettings = ToolSettings()
-    private val history = CommandHistory()
-
-
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityEditorBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        val title = intent.getStringExtra(EXTRA_NOTE_TITLE)
-            ?: savedInstanceState?.getString(STATE_TITLE)
-            ?: getString(R.string.default_note_title)
-        chrome.setNoteTitle(title)
-
-        if (savedInstanceState != null) {
-            val tool = savedInstanceState.getString(STATE_TOOL)?.let { ToolKind.valueOf(it) }
-                ?: ToolKind.PEN
-            chrome.selectTool(tool)
-            chrome.setWriteMode(savedInstanceState.getBoolean(STATE_WRITE, true))
-            chrome.setZoomPercent(savedInstanceState.getInt(STATE_ZOOM, 100))
-            chrome.setPage(
-                savedInstanceState.getInt(STATE_PAGE_INDEX, 0),
-                savedInstanceState.getInt(STATE_PAGE_COUNT, 1)
-            )
+    override fun onCreate(state:Bundle?) {
+        super.onCreate(state)
+        onBackPressedDispatcher.addCallback(this,object:androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {leave()}
+        })
+        window.statusBarColor=NativeUi.BG;window.navigationBarColor=NativeUi.BG
+        val id=intent.getStringExtra(EXTRA_NOTE_ID) ?: state?.getString("noteId")
+        if(id==null) {finish();return}
+        tool=runCatching {ToolKind.valueOf(prefs.getString("tool","PEN")!!)}.getOrDefault(ToolKind.PEN)
+        write=state?.getBoolean("write") ?: (tool!=ToolKind.HAND)
+        shapes=prefs.getBoolean("shapes",false)
+        smoothing=runCatching {SmoothingLevel.valueOf(prefs.getString("smoothing","LOW")!!)}.getOrDefault(SmoothingLevel.LOW)
+        stripVisible=state?.getBoolean("strip")?:false;stripLeft=state?.getFloat("stripLeft")?:15f;stripTop=state?.getFloat("stripTop")?:40f
+        val retained=lastCustomNonConfigurationInstance as? Session
+        setContentView(NativeUi.text(this,"Opening notebook…",20f).apply {gravity=Gravity.CENTER})
+        if(retained!=null) {session=retained;loading=false;build();return}
+        NotebookIO.submit({NotebookIO.database.load(id)?:error("Notebook could not be found")}) {r->
+            if(isFinishing || isDestroyed) return@submit
+            r.onSuccess {doc->
+                session=Session(doc,(state?.getInt("page")?:prefs.getInt("page.$id",0)).coerceIn(doc.pages.indices))
+                if(state!=null) {session.zoom=state.getFloat("zoom",1f);session.panX=state.getFloat("panX");session.panY=state.getFloat("panY")}
+                loading=false;build()
+            }.onFailure {AlertDialog.Builder(this).setTitle("Could not open notebook").setMessage(it.message).setPositiveButton("Back") {_,_->finish()}.show()}
         }
+    }
+    override fun onRetainCustomNonConfigurationInstance():Any? {rememberViewport();return if(loading) null else session}
+    override fun onSaveInstanceState(out:Bundle) {
+        super.onSaveInstanceState(out);if(loading)return
+        rememberViewport();out.putString("noteId",session.note.id);out.putInt("page",session.index)
+        out.putFloat("zoom",session.zoom);out.putFloat("panX",session.panX);out.putFloat("panY",session.panY)
+        out.putBoolean("write",write);out.putBoolean("strip",stripVisible);out.putFloat("stripLeft",stripLeft);out.putFloat("stripTop",stripTop)
+    }
+    override fun onPause() {if(!loading) {canvas.cancelWork();strip.cancelWork();rememberViewport();saveGuard()};super.onPause()}
+    private fun rememberViewport() {if(!loading && ::canvas.isInitialized) {session.zoom=canvas.viewport.zoom;session.panX=canvas.viewport.panXPx;session.panY=canvas.viewport.panYPx}}
+    private fun build() {
+        root=NativeUi.column(this).apply {setBackgroundColor(NativeUi.BG)}
+        val landscape=resources.configuration.screenWidthDp>resources.configuration.screenHeightDp
+        val header=NativeUi.row(this).apply {setPadding(dp(10),dp(3),dp(10),dp(3))}
+        header.addView(NativeUi.button(this,"‹ Back") {leave()})
+        header.addView(NativeUi.text(this,session.note.title,20f,true).apply {maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(dp(10),0,dp(8),0)},LinearLayout.LayoutParams(0,-2,1f))
+        status=NativeUi.text(this,"Saved",13f).apply {setPadding(dp(8),0,dp(8),0);setOnClickListener {save()};contentDescription="Save status. Tap to retry a failed save"}
+        header.addView(status)
+        val actions=NativeUi.row(this).apply {setPadding(dp(8),0,dp(8),0)}
+        undo=NativeUi.button(this,"↶ Undo") {undo()};redo=NativeUi.button(this,"↷ Redo") {redo()}
+        actions.addView(undo);actions.addView(redo)
+        actions.addView(NativeUi.button(this,"Pages") {pageDialog()})
+        actions.addView(NativeUi.button(this,"Export PDF") {exportAfterSave=true;save()})
 
-        binding.inkCanvas.page = PageSpec(
-            pageId = UUID.randomUUID().toString(),
-            paperType = PaperType.RULED
-        )
-        binding.inkCanvas.brush = BrushKind.PEN
-        binding.inkCanvas.widthMm = 0.45f
-        binding.inkCanvas.onStrokeCommitted = { stroke ->
-            if (toolSettings.brush == BrushKind.ERASER) {
-                // Eraser tool: treat tap/stroke center as whole-stroke erase.
-                val mid = stroke.samples.getOrNull(stroke.samples.size / 2)
-                binding.inkCanvas.strokes.removeAll { it.strokeId == stroke.strokeId }
-                if (mid != null) {
-                    val hit = StrokeEraser.hitTest(
-                        binding.inkCanvas.strokes.toList(),
-                        mid.xMm,
-                        mid.yMm,
-                        radiusMm = toolSettings.widthMm
-                    )
-                    if (hit != null) {
-                        binding.inkCanvas.strokes.remove(hit)
-                        history.push(EditorCommand.EraseStroke(hit))
-                    }
-                }
-            } else {
-                history.push(EditorCommand.AddStroke(stroke))
+        header.addView(NativeUi.button(this,"⋮") {moreOptions()})
+        if(landscape) header.addView(actions) else {root.addView(header);root.addView(actions)}
+        if(landscape)root.addView(header)
+        tools=NativeUi.row(this).apply {setPadding(dp(2),dp(4),dp(2),0)}
+        options=NativeUi.row(this).apply {setPadding(dp(2),0,dp(2),dp(4))}
+        val combined=NativeUi.row(this);combined.addView(tools);combined.addView(options)
+        if(landscape)combined.addView(Switch(this).apply {text="Hold shapes";isChecked=shapes;minHeight=dp(48);setPadding(dp(12),0,dp(8),0)
+            setOnCheckedChangeListener {_,checked->shapes=checked;prefs.edit().putBoolean("shapes",checked).apply();applyTool()}})
+        root.addView(NativeUi.scrollRow(this,combined))
+        val workspace=NativeUi.row(this)
+        pageRail=NativeUi.column(this).apply {setPadding(dp(8),dp(8),dp(8),0)}
+        if(landscape) workspace.addView(ScrollView(this).apply {addView(pageRail)},LinearLayout.LayoutParams(dp(108),-1))
+        canvas=InkCanvasView(this)
+        workspace.addView(canvas,LinearLayout.LayoutParams(0,-1,1f))
+        root.addView(workspace,LinearLayout.LayoutParams(-1,0,1f))
+        stripBox=NativeUi.column(this).apply {background=NativeUi.rounded(Color.WHITE);visibility=if(stripVisible) View.VISIBLE else View.GONE}
+        val stripActions=NativeUi.row(this)
+        stripActions.addView(NativeUi.text(this,"Zoom writing",16f,true).apply {setPadding(dp(12),0,dp(8),0)})
+        stripActions.addView(NativeUi.button(this,"←") {moveStrip(-20f,0f)})
+        stripActions.addView(NativeUi.button(this,"→") {moveStrip(20f,0f)})
+        stripActions.addView(NativeUi.button(this,"↑") {moveStrip(0f,-current().spec.ruleSpacingMm)})
+        stripActions.addView(NativeUi.button(this,"Next line ↓") {moveStrip(0f,current().spec.ruleSpacingMm)})
+        stripActions.addView(NativeUi.spacer(this))
+        stripActions.addView(NativeUi.button(this,"Close") {toggleStrip()})
+        stripBox.addView(stripActions)
+        overview=PagePreviewView(this).apply {contentDescription="Zoom writing source. Drag to choose a region";onSelectRegion={x,y->strip.cancelWork();stripLeft=(x-45).coerceIn(0f,120f);stripTop=(y-15).coerceIn(0f,267f);updateStrip()}}
+        if(!landscape)stripBox.addView(overview,LinearLayout.LayoutParams(-1,dp(72)))
+        strip=InkCanvasView(this)
+        stripBox.addView(strip,LinearLayout.LayoutParams(-1,dp(if(landscape) 150 else 200)))
+        root.addView(stripBox)
+        val bottom=NativeUi.row(this).apply {setPadding(dp(6),dp(3),dp(6),dp(3))}
+        pageLabel=NativeUi.text(this,"",14f).apply {minHeight=dp(48);gravity=Gravity.CENTER;setPadding(dp(6),0,dp(6),0);setOnClickListener {pageDialog()};contentDescription="Current page. Tap to change pages"};bottom.addView(pageLabel)
+        bottom.addView(NativeUi.spacer(this))
+        bottom.addView(NativeUi.button(this,"−") {zoom(-0.25f)})
+        zoomLabel=NativeUi.text(this,"100%",14f);bottom.addView(zoomLabel)
+        bottom.addView(NativeUi.button(this,"＋") {zoom(0.25f)})
+        bottom.addView(NativeUi.button(this,"Fit") {canvas.cancelWork();canvas.viewport.fitPage();viewChanged()}.apply {setOnLongClickListener {canvas.cancelWork();canvas.viewport.fitWidth();viewChanged();true}})
+        writeButton=NativeUi.button(this,"Write",true) {write=true;if(tool==ToolKind.HAND) selectTool(ToolKind.PEN) else applyTool()}
+        navigateButton=NativeUi.button(this,"Navigate") {write=false;applyTool()}
+        bottom.addView(writeButton);bottom.addView(navigateButton)
+        root.addView(bottom)
+        setContentView(root)
+        canvas.onViewport={viewChanged()}
+        listOf(canvas,strip).forEach {v->
+            v.onStroke={raw,fitted->
+                changePage(current().copy(strokes=current().strokes+raw))
+                if(fitted!=null) changePage(current().copy(strokes=current().strokes.dropLast(1)+fitted))
             }
-            chrome.setHistory(history.canUndo, history.canRedo)
-            renderChrome()
-            binding.inkCanvas.invalidate()
-        }
-
-        wireChrome()
-        renderChrome()
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString(STATE_TITLE, chrome.state.noteTitle)
-        outState.putString(STATE_TOOL, chrome.state.selectedTool.name)
-        outState.putBoolean(STATE_WRITE, chrome.state.writeMode)
-        outState.putInt(STATE_ZOOM, chrome.state.zoomPercent)
-        outState.putInt(STATE_PAGE_INDEX, chrome.state.pageIndex)
-        outState.putInt(STATE_PAGE_COUNT, chrome.state.pageCount)
-    }
-
-    private fun wireChrome() {
-        binding.backButton.setOnClickListener { finish() }
-        binding.noteTitle.text = chrome.state.noteTitle
-
-        bindTool(binding.toolPen, ToolKind.PEN)
-        bindTool(binding.toolMarker, ToolKind.MARKER)
-        bindTool(binding.toolHighlighter, ToolKind.HIGHLIGHTER)
-        bindTool(binding.toolEraser, ToolKind.ERASER)
-        bindTool(binding.toolHand, ToolKind.HAND)
-
-        binding.undoButton.setOnClickListener { applyUndo() }
-        binding.redoButton.setOnClickListener { applyRedo() }
-        binding.pagesButton.setOnClickListener { /* page drawer in PR 15 */ }
-        binding.exportButton.setOnClickListener { /* export in PR 20 */ }
-
-        binding.zoomOutButton.setOnClickListener {
-            chrome.setZoomPercent(chrome.state.zoomPercent - 25)
-            applyZoomToPreview()
-            renderChrome()
-        }
-        binding.zoomInButton.setOnClickListener {
-            chrome.setZoomPercent(chrome.state.zoomPercent + 25)
-            applyZoomToPreview()
-            renderChrome()
-        }
-        binding.fitButton.setOnClickListener {
-            chrome.setZoomPercent(100)
-            binding.inkCanvas.viewport.fitPage()
-            binding.inkCanvas.invalidate()
-            renderChrome()
-        }
-
-        binding.modeWriteButton.setOnClickListener {
-            chrome.setWriteMode(true)
-            chrome.selectTool(ToolKind.PEN)
-            renderChrome()
-        }
-        binding.modeNavigateButton.setOnClickListener {
-            chrome.setWriteMode(false)
-            renderChrome()
-        }
-
-        binding.palmGuardButton.setOnClickListener {
-            val g = binding.inkCanvas.palmGuards
-            val next = when (g.guard.edge) {
-                GuardEdge.BOTTOM -> GuardEdge.LEFT
-                GuardEdge.LEFT -> GuardEdge.RIGHT
-                GuardEdge.RIGHT -> GuardEdge.BOTTOM
+            v.onErase={samples,radius->
+                val source=current().strokes
+                val ids=com.weave.notebook.command.EraserPath.hitIds(source,samples,radius)
+                if(ids.isNotEmpty()) changePage(current().copy(strokes=source.filter {it.strokeId !in ids}))
             }
-            g.setHandedness(next)
-            Toast.makeText(this, R.string.palm_guard_hint, Toast.LENGTH_SHORT).show()
-            binding.inkCanvas.invalidate()
+            v.onShapeStatus={recognized->if(recognized)status.text="Shape recognized" else updateStatus()}
         }
-        binding.palmGuardButton.setOnLongClickListener {
-            val g = binding.inkCanvas.palmGuards
-            g.setLocked(!g.guard.locked)
-            true
-        }
+        val guardEdge=runCatching {GuardEdge.valueOf(prefs.getString("guardEdge","BOTTOM")!!)}.getOrDefault(GuardEdge.BOTTOM)
+        listOf(canvas,strip).forEach {v->v.palmGuards.guard=v.palmGuards.guard.copy(enabled=prefs.getBoolean("guard",false),edge=guardEdge,locked=prefs.getBoolean("guardLock",false),sizePx=prefs.getFloat(if(v==strip)"stripGuardSize" else "guardSize",dp(if(v==strip)40 else 90).toFloat()))}
+        canvas.post {canvas.viewport.restore(session.zoom,session.panX,session.panY);viewChanged();updateStrip()}
+        session.observer={if(!isDestroyed)updateStatus()}
+        renderTools();renderPage();updateStatus()
     }
-
-    private fun bindTool(button: Button, tool: ToolKind) {
-        button.setOnClickListener {
-            chrome.selectTool(tool)
-            if (tool == ToolKind.HAND) chrome.setWriteMode(false) else chrome.setWriteMode(true)
-            renderChrome()
+    private fun current()=session.note.pages[session.index]
+    private fun selectTool(t:ToolKind) {canvas.cancelWork();strip.cancelWork();tool=t;write=t!=ToolKind.HAND;prefs.edit().putString("tool",t.name).apply();renderTools()}
+    private fun renderTools() {
+        tools.removeAllViews()
+        ToolKind.entries.forEach { t->
+            val label=when(t) {ToolKind.PEN->"Pen";ToolKind.MARKER->"Marker";ToolKind.HIGHLIGHTER->"Highlighter";ToolKind.ERASER->"Eraser";ToolKind.HAND->"Hand"}
+            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {setOnLongClickListener {selectTool(t);toolOptions();true}})
         }
-    }
-
-    private fun applyUndo() {
-        when (val cmd = history.undo()) {
-            is EditorCommand.AddStroke -> binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.stroke.strokeId }
-            is EditorCommand.EraseStroke -> binding.inkCanvas.strokes.add(cmd.stroke)
-            is EditorCommand.ReplaceStroke -> {
-                binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.after.strokeId }
-                binding.inkCanvas.strokes.add(cmd.before)
+        brush=when(tool) {ToolKind.MARKER->BrushKind.MARKER;ToolKind.HIGHLIGHTER->BrushKind.HIGHLIGHTER;ToolKind.ERASER->BrushKind.ERASER;else->BrushKind.PEN}
+        strokeWidth=prefs.getFloat("width.$brush",BrushCatalog.defaultWidth(brush))
+        color=prefs.getInt("color.$brush",BrushCatalog.colorsFor(brush).first())
+        options.removeAllViews()
+        if(tool!=ToolKind.HAND) {
+            val widths=BrushCatalog.widthsFor(brush)
+            val visible=listOf(widths.first(),strokeWidth,widths.last()).distinct().sorted()
+            visible.forEachIndexed {i,w->options.addView(NativeUi.dot(this,"Width ${w} mm",NativeUi.TEXT,3+i*2,w==strokeWidth) {prefs.edit().putFloat("width.$brush",w).apply();renderTools()})}
+            if(brush!=BrushKind.ERASER) {
+                val colors=BrushCatalog.colorsFor(brush)
+                val names=if(brush==BrushKind.HIGHLIGHTER) listOf("Yellow","Pink","Green") else listOf("Black","Blue","Red","Green")
+                colors.forEachIndexed {i,c->options.addView(NativeUi.dot(this,names[i],c,10,c==color) {prefs.edit().putInt("color.$brush",c).apply();renderTools()})}
             }
-            null -> Unit
         }
-        chrome.setHistory(history.canUndo, history.canRedo)
-        renderChrome()
-        binding.inkCanvas.invalidate()
+        applyTool()
     }
-
-    private fun applyRedo() {
-        when (val cmd = history.redo()) {
-            is EditorCommand.AddStroke -> binding.inkCanvas.strokes.add(cmd.stroke)
-            is EditorCommand.EraseStroke -> binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.stroke.strokeId }
-            is EditorCommand.ReplaceStroke -> {
-                binding.inkCanvas.strokes.removeAll { it.strokeId == cmd.before.strokeId }
-                binding.inkCanvas.strokes.add(cmd.after)
+    private fun applyTool() {
+        listOf(canvas,strip).forEach {v->v.cancelWork();v.brush=brush;v.widthMm=strokeWidth;v.colorArgb=color;v.inkEnabled=write && tool!=ToolKind.HAND;v.holdShapes=shapes;v.pipeline.smoother.level=smoothing}
+        NativeUi.select(writeButton,write);NativeUi.select(navigateButton,!write)
+    }
+    private fun renderPage() {
+        session.index=session.index.coerceIn(session.note.pages.indices)
+        val page=current()
+        listOf(canvas,strip).forEach {it.page=page.spec;it.strokes=page.strokes;it.invalidate()}
+        pageLabel.text="${session.index+1} / ${session.note.pages.size}"
+        undo.isEnabled=session.history.canUndo;redo.isEnabled=session.history.canRedo
+        undo.alpha=if(undo.isEnabled)1f else 0.4f;redo.alpha=if(redo.isEnabled)1f else 0.4f
+        overview.page=page.spec;overview.strokes=page.strokes;overview.invalidate()
+        renderRail();updateStrip()
+        prefs.edit().putInt("page.${session.note.id}",session.index).apply()
+    }
+    private fun renderRail() {
+        pageRail.removeAllViews()
+        session.note.pages.forEachIndexed {i,p->
+            val holder=NativeUi.column(this).apply {setPadding(dp(4),dp(4),dp(4),dp(4));background=NativeUi.rounded(if(i==session.index)0xFFBEE0E1.toInt() else Color.TRANSPARENT)}
+            holder.addView(PagePreviewView(this).apply {page=p.spec;strokes=p.strokes;contentDescription="Page ${i+1}";setOnClickListener {switchPage(i)};setOnLongClickListener {pageMenu(i);true}},LinearLayout.LayoutParams(dp(76),dp(108)))
+            holder.addView(NativeUi.text(this,"${i+1}",13f).apply {gravity=Gravity.CENTER})
+            pageRail.addView(holder)
+        }
+        pageRail.addView(NativeUi.tool(this,"Add page",false) {addPage()}.apply {layoutParams=LinearLayout.LayoutParams(-1,dp(70))})
+    }
+    private fun changePage(page:NotebookPage) {edit(session.note.copy(pages=session.note.pages.toMutableList().also {it[session.index]=page}))}
+    private fun edit(next:NotebookDocument) {session.history.record(session.note);session.note=next.copy(modified=System.currentTimeMillis());renderPage();save()}
+    private fun undo() {canvas.cancelWork();strip.cancelWork();session.history.undo(session.note)?.let {session.note=it.copy(modified=System.currentTimeMillis());renderPage();save()}}
+    private fun redo() {canvas.cancelWork();strip.cancelWork();session.history.redo(session.note)?.let {session.note=it.copy(modified=System.currentTimeMillis());renderPage();save()}}
+    private fun save() {
+        if(loading)return
+        val note=session.note;val target=++session.revision;updateStatus()
+        val shared=session
+        NotebookIO.submit({NotebookIO.database.save(note)}) {r->
+            r.onSuccess {shared.saved=target;shared.failed=false}.onFailure {shared.failed=true}
+            shared.observer?.invoke()
+            if(!isDestroyed) {
+                updateStatus()
+                if(r.isSuccess && shared.saved==shared.revision) {
+                    if(exitAfterSave) finish()
+                    if(exportAfterSave) {exportAfterSave=false;startActivity(Intent(this,ExportActivity::class.java).putExtra(EXTRA_NOTE_ID,note.id).putExtra("page",session.index))}
+                } else if(r.isFailure) {exitAfterSave=false;exportAfterSave=false;Toast.makeText(this,"Save failed. Tap the status to retry. Your previous saved copy is intact.",Toast.LENGTH_LONG).show()}
             }
-            null -> Unit
         }
-        chrome.setHistory(history.canUndo, history.canRedo)
-        renderChrome()
-        binding.inkCanvas.invalidate()
     }
-
-    private fun applyZoomToPreview() {
-        val factor = chrome.state.zoomPercent / 100f
-        val w = binding.inkCanvas.width.toFloat().coerceAtLeast(1f)
-        val h = binding.inkCanvas.height.toFloat().coerceAtLeast(1f)
-        binding.inkCanvas.viewport.setZoom(factor, w / 2f, h / 2f)
-        binding.inkCanvas.invalidate()
+    private fun updateStatus() {if(!::session.isInitialized || !::status.isInitialized)return;status.text=when {session.failed->"Save failed · Retry";session.saved<session.revision->"Saving…";else->"Saved"};status.setTextColor(if(session.failed)0xFFB3261E.toInt() else NativeUi.MUTED)}
+    private fun switchPage(i:Int) {if(i !in session.note.pages.indices)return;canvas.cancelWork();strip.cancelWork();session.index=i;canvas.viewport.fitPage();renderPage();viewChanged()}
+    private fun addPage() {val p=NotebookPage(PageSpec(UUID.randomUUID().toString(),current().spec.paperType,current().spec.ruleSpacingMm));session.index=session.note.pages.size;edit(session.note.copy(pages=session.note.pages+p))}
+    private fun pageDialog() {
+        val items=session.note.pages.mapIndexed {i,p->"Page ${i+1}  ·  ${if(p.spec.paperType==PaperType.RULED) "Lined" else "Plain"}"}.toTypedArray()
+        AlertDialog.Builder(this).setTitle("Pages · tap to open").setItems(items) {_,i->switchPage(i);pageMenu(i)}.setPositiveButton("＋ Add page") {_,_->addPage()}.setNegativeButton("Close",null).show()
     }
-
-    private fun renderChrome() {
-        val s = chrome.state
-        binding.noteTitle.text = s.noteTitle
-        binding.saveStatus.text = when (s.saveLabel) {
-            SaveLabel.SAVING -> getString(R.string.save_saving)
-            SaveLabel.SAVED -> getString(R.string.save_saved)
-            SaveLabel.SAVE_FAILED -> getString(R.string.save_failed)
-        }
-        binding.pageStatus.text = getString(R.string.page_status, s.pageIndex + 1, s.pageCount)
-        binding.zoomStatus.text = getString(R.string.zoom_status, s.zoomPercent)
-
-        styleTool(binding.toolPen, ToolKind.PEN)
-        styleTool(binding.toolMarker, ToolKind.MARKER)
-        styleTool(binding.toolHighlighter, ToolKind.HIGHLIGHTER)
-        styleTool(binding.toolEraser, ToolKind.ERASER)
-        styleTool(binding.toolHand, ToolKind.HAND)
-
-        binding.undoButton.isEnabled = s.canUndo
-        binding.redoButton.isEnabled = s.canRedo
-        binding.undoButton.alpha = if (s.canUndo) 1f else 0.4f
-        binding.redoButton.alpha = if (s.canRedo) 1f else 0.4f
-
-        styleMode(binding.modeWriteButton, s.writeMode)
-        styleMode(binding.modeNavigateButton, !s.writeMode)
-
-        binding.inkCanvas.inkEnabled = s.writeMode && s.selectedTool != ToolKind.HAND
-        val brush = when (s.selectedTool) {
-            ToolKind.MARKER -> BrushKind.MARKER
-            ToolKind.HIGHLIGHTER -> BrushKind.HIGHLIGHTER
-            ToolKind.ERASER -> BrushKind.ERASER
-            else -> BrushKind.PEN
-        }
-        if (toolSettings.brush != brush) {
-            toolSettings = toolSettings.withBrush(brush)
-        }
-        binding.inkCanvas.brush = toolSettings.brush
-        binding.inkCanvas.widthMm = toolSettings.widthMm
-        binding.inkCanvas.colorArgb = toolSettings.colorArgb
+    private fun pageMenu(index:Int) {
+        switchPage(index)
+        AlertDialog.Builder(this).setTitle("Page ${index+1}").setItems(arrayOf("Write on this page","Change paper","Duplicate page","Move earlier","Move later","Delete page")) {_,which->
+            when(which) {
+                1->paperDialog()
+                2->{val p=current();val id=UUID.randomUUID().toString();val copy=NotebookPage(p.spec.copy(pageId=id),p.strokes.map {it.copy(strokeId=UUID.randomUUID().toString(),pageId=id)})
+                    val pages=session.note.pages.toMutableList();pages.add(index+1,copy);session.index=index+1;edit(session.note.copy(pages=pages))}
+                3,4->{val to=index+if(which==3)-1 else 1;if(to in session.note.pages.indices) {val pages=session.note.pages.toMutableList();val p=pages.removeAt(index);pages.add(to,p);session.index=to;edit(session.note.copy(pages=pages))}}
+                5->if(session.note.pages.size>1) AlertDialog.Builder(this).setTitle("Delete page ${index+1}?").setMessage("Undo can restore this page while the editor stays open.").setNegativeButton("Cancel",null).setPositiveButton("Delete") {_,_->val pages=session.note.pages.toMutableList();pages.removeAt(index);session.index=minOf(index,pages.lastIndex);edit(session.note.copy(pages=pages))}.show()
+                    else Toast.makeText(this,"Keep at least one page in a notebook",Toast.LENGTH_SHORT).show()
+            }
+        }.show()
     }
-
-    private fun styleTool(button: Button, tool: ToolKind) {
-        val selected = chrome.isToolSelected(tool)
-        val bg = if (selected) R.color.teal_selection else R.color.paper_white
-        val fg = if (selected) R.color.paper_white else R.color.charcoal
-        button.setBackgroundColor(ContextCompat.getColor(this, bg))
-        button.setTextColor(ContextCompat.getColor(this, fg))
-        button.contentDescription = getString(R.string.tool_content_desc, tool.name.lowercase())
+    private fun paperDialog() {
+        canvas.cancelWork();strip.cancelWork()
+        AlertDialog.Builder(this).setTitle("A4 paper · 210 × 297 mm").setItems(arrayOf("Plain","Lined · 6 mm","Lined · 8 mm","Lined · 10 mm")) {_,i->
+            changePage(current().copy(spec=current().spec.copy(paperType=if(i==0)PaperType.PLAIN else PaperType.RULED,ruleSpacingMm=when(i){1->6f;3->10f;else->8f})))
+        }.show()
     }
-
-    private fun styleMode(button: Button, selected: Boolean) {
-        val bg = if (selected) R.color.teal_selection else R.color.paper_white
-        val fg = if (selected) R.color.paper_white else R.color.charcoal
-        button.setBackgroundColor(ContextCompat.getColor(this, bg))
-        button.setTextColor(ContextCompat.getColor(this, fg))
+    private fun zoom(delta:Float) {canvas.cancelWork();canvas.viewport.setZoom(canvas.viewport.zoom+delta,canvas.width/2f,canvas.height/2f);viewChanged()}
+    private fun viewChanged() {zoomLabel.text="${(canvas.viewport.zoom*100).toInt()}%";canvas.invalidate();rememberViewport()}
+    private fun toggleStrip() {canvas.cancelWork();strip.cancelWork();stripVisible=!stripVisible;stripBox.visibility=if(stripVisible)View.VISIBLE else View.GONE;canvas.post {updateStrip()}}
+    private fun moveStrip(dx:Float,dy:Float) {strip.cancelWork();stripLeft=(stripLeft+dx).coerceIn(0f,120f);stripTop=(stripTop+dy).coerceIn(0f,267f);updateStrip()}
+    private fun updateStrip() {if(!::strip.isInitialized)return;val r=RectF(stripLeft,stripTop,stripLeft+90f,stripTop+30f);canvas.sourceIndicator=if(stripVisible)r else null;overview.sourceIndicator=r;overview.invalidate();strip.region(r);canvas.invalidate()}
+    private fun saveGuard() {
+        if(!::canvas.isInitialized)return
+        val g=canvas.palmGuards.guard
+        prefs.edit().putBoolean("guard",g.enabled).putString("guardEdge",g.edge.name).putBoolean("guardLock",g.locked)
+            .putFloat("guardSize",g.sizePx).putFloat("stripGuardSize",strip.palmGuards.guard.sizePx).apply()
     }
-
-    companion object {
-        const val EXTRA_NOTE_TITLE = "extra_note_title"
-        const val EXTRA_NOTE_ID = "extra_note_id"
-
-        private const val STATE_TITLE = "state_title"
-        private const val STATE_TOOL = "state_tool"
-        private const val STATE_WRITE = "state_write"
-        private const val STATE_ZOOM = "state_zoom"
-        private const val STATE_PAGE_INDEX = "state_page_index"
-        private const val STATE_PAGE_COUNT = "state_page_count"
+    private fun guardDialog() {
+        canvas.cancelWork();strip.cancelWork()
+        AlertDialog.Builder(this).setTitle("Palm guard").setItems(arrayOf("Off","Bottom","Left handed · left edge","Right handed · right edge","Lock / unlock size","Writing window · centre","Clear writing window")) {_,i->
+            listOf(canvas,strip).forEach {v->
+                val g=v.palmGuards
+                when(i) {
+                    0->g.guard=g.guard.copy(enabled=false)
+                    1,2,3->g.guard=g.guard.copy(enabled=true,edge=when(i){2->GuardEdge.LEFT;3->GuardEdge.RIGHT;else->GuardEdge.BOTTOM},sizePx=dp(if(v==strip)40 else 90).toFloat())
+                    4->g.setLocked(!g.guard.locked)
+                    5->g.writingWindow=WritingWindowState(true,v.width*0.12f,v.height*0.15f,v.width*0.88f,v.height*0.8f)
+                    6->g.writingWindow=WritingWindowState()
+                };v.invalidate()
+            };saveGuard()
+        }.show()
     }
+    private fun moreOptions() {
+        AlertDialog.Builder(this).setTitle("Writing options").setItems(arrayOf("${if(shapes) "✓ " else ""}Hold shapes","Zoom writing","Palm guard / writing window","Change paper","Smoothing","All tool widths")) {_,i->
+            when(i) {0->{shapes=!shapes;prefs.edit().putBoolean("shapes",shapes).apply();applyTool()};1->toggleStrip();2->guardDialog();3->paperDialog();4->settings();5->toolOptions()}
+        }.show()
+    }
+    private fun toolOptions() {
+        if(tool==ToolKind.HAND)return
+        val widths=BrushCatalog.widthsFor(brush)
+        AlertDialog.Builder(this).setTitle("${tool.name.lowercase().replaceFirstChar {it.uppercase()}} width")
+            .setSingleChoiceItems(widths.map {"$it mm"}.toTypedArray(),widths.indexOfFirst {it==strokeWidth}) {dialog,i->prefs.edit().putFloat("width.$brush",widths[i]).apply();renderTools();dialog.dismiss()}.setNegativeButton("Close",null).show()
+    }
+    private fun settings() {
+        canvas.cancelWork();strip.cancelWork()
+        AlertDialog.Builder(this).setTitle("Handwriting smoothing").setSingleChoiceItems(arrayOf("Off · raw input","Low · default","Medium"),smoothing.ordinal) {dialog,i->
+            smoothing=SmoothingLevel.entries[i];prefs.edit().putString("smoothing",smoothing.name).apply();applyTool();dialog.dismiss()
+        }.setNegativeButton("Close",null).show()
+    }
+    private fun leave() {if(loading){finish();return};canvas.cancelWork();strip.cancelWork();exitAfterSave=true;save()}
+    companion object {const val EXTRA_NOTE_ID="extra_note_id";const val EXTRA_NOTE_TITLE="extra_note_title"}
 }

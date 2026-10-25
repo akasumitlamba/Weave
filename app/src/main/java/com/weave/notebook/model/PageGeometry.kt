@@ -70,7 +70,8 @@ data class StrokeRecord(
     val colorArgb: Int,
     val widthMm: Float,
     val smoothingVersion: Int = 0,
-    val fittedShape: FittedShape? = null
+    val fittedShape: FittedShape? = null,
+    val rawSamples: List<StrokeSample>? = null
 )
 
 sealed class FittedShape {

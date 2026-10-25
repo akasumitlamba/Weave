@@ -26,7 +26,10 @@ class ManifestContractTest {
         val text = manifest.readText()
         assertThat(text).doesNotContain("android.permission.INTERNET")
         assertThat(text).doesNotContain("android.permission.ACCESS_NETWORK_STATE")
-        assertThat(text).contains(".MainActivity")
+        assertThat(text).contains("android:allowBackup=\"false\"")
+        assertThat(text).contains(".ui.LibraryActivity")
+        assertThat(text).doesNotContain("InputProbeActivity")
+        assertThat(text).doesNotContain(".MainActivity")
         assertThat(text).contains("<!-- Weave is offline-only")
     }
 }

@@ -1,152 +1,134 @@
 package com.weave.notebook.ui
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.text.format.DateUtils
-import android.view.LayoutInflater
-import android.widget.EditText
-import android.widget.TextView
-
+import android.view.Gravity
+import android.view.View
+import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.weave.notebook.BuildConfig
-import com.weave.notebook.R
-import com.weave.notebook.data.NoteMeta
-import com.weave.notebook.data.WeaveRepository
-import com.weave.notebook.databinding.ActivityLibraryBinding
-import com.weave.notebook.input.InputProbeActivity
-import com.weave.notebook.model.PaperType
+import com.weave.notebook.data.*
+import com.weave.notebook.backup.DocumentArchive
+import com.weave.notebook.model.*
+import com.weave.notebook.render.PagePreviewView
+import com.weave.notebook.ui.NativeUi.dp
 
-/**
- * Notes library: create, open, rename, duplicate, delete with confirmation.
- * Tagline lives here — not on the writing toolbar.
- */
-class LibraryActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityLibraryBinding
-    private val store get() = WeaveRepository.store
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityLibraryBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        binding.brandName.text = getString(R.string.app_name)
-        binding.tagline.text = getString(R.string.tagline)
-
-        binding.newNoteButton.setOnClickListener { showNewNoteDialog() }
-
-        if (BuildConfig.DEBUG) {
-            binding.openProbeButton.visibility = android.view.View.VISIBLE
-            binding.openProbeButton.setOnClickListener {
-                startActivity(Intent(this, InputProbeActivity::class.java))
-            }
-        } else {
-            binding.openProbeButton.visibility = android.view.View.GONE
+class LibraryActivity: AppCompatActivity() {
+    private lateinit var grid: GridLayout
+    private lateinit var status: TextView
+    private lateinit var recent:TextView
+    private var docs=listOf<NotebookDocument>()
+    private var backup:NotebookDocument?=null
+    private var backupId:String?=null
+    private val restore=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if(uri!=null) {
+            status.visibility=View.VISIBLE;status.text="Restoring notebook…"
+            NotebookIO.submit({
+                val note=contentResolver.openInputStream(uri)?.use { DocumentArchive.decode(it) } ?: error("Cannot open backup")
+                NotebookIO.database.save(note);note
+            }) { r -> r.onSuccess { refresh();toast("Notebook restored") }.onFailure { error(it) } }
         }
     }
-
-    override fun onResume() {
-        super.onResume()
-        refreshList()
-    }
-
-    private fun refreshList() {
-        val notes = store.listNotes()
-        binding.notesContainer.removeAllViews()
-        if (notes.isEmpty()) {
-            binding.libraryStatus.visibility = android.view.View.VISIBLE
-            binding.libraryStatus.text = getString(R.string.library_empty_hint)
-            return
-        }
-        binding.libraryStatus.visibility = android.view.View.GONE
-        val inflater = LayoutInflater.from(this)
-        for (note in notes) {
-            val row = inflater.inflate(R.layout.item_note, binding.notesContainer, false)
-            row.findViewById<TextView>(R.id.noteTitle).text = note.title
-            row.findViewById<TextView>(R.id.noteMeta).text = getString(
-                R.string.note_meta_format,
-                note.pageIds.size,
-                DateUtils.getRelativeTimeSpanString(note.modifiedAtMs)
-            )
-            row.setOnClickListener { openNote(note) }
-            row.findViewById<TextView>(R.id.noteMenu).setOnClickListener { showNoteMenu(note) }
-            binding.notesContainer.addView(row)
+    private val saveBackup=registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val snapshot=backup;val id=backupId?:snapshot?.id;backup=null;backupId=null
+        if(uri!=null && id!=null) {
+            status.visibility=View.VISIBLE;status.text="Writing editable backup…"
+            NotebookIO.submit({
+                val note=snapshot?:NotebookIO.database.load(id)?:error("Notebook not found")
+                val bytes=DocumentArchive.encode(note)
+                contentResolver.openOutputStream(uri,"w")?.use { it.write(bytes);it.flush() } ?: error("Cannot write backup")
+            }) { r -> r.onSuccess {status.visibility=View.GONE;toast("Backup saved")}.onFailure { error(it) } }
         }
     }
+    override fun onCreate(state:Bundle?) {
+        super.onCreate(state)
+        backupId=state?.getString("backupId")
+        window.statusBarColor=NativeUi.BG;window.navigationBarColor=NativeUi.BG
+        val root=NativeUi.column(this).apply { setBackgroundColor(NativeUi.BG);setPadding(dp(28),dp(16),dp(28),dp(12)) }
+        val head=NativeUi.row(this)
+        val brand=NativeUi.column(this)
+        brand.addView(NativeUi.text(this,"Weave",32f,true))
+        brand.addView(NativeUi.text(this,"Connecting ideas together",15f).apply {setTextColor(NativeUi.MUTED)})
+        head.addView(brand,LinearLayout.LayoutParams(0,-2,1f))
+        head.addView(NativeUi.button(this,"Restore") {restore.launch(arrayOf("application/octet-stream","application/zip","*/*"))})
+        head.addView(NativeUi.button(this,"＋ New note",true) {newNote()})
+        root.addView(head)
+        recent=NativeUi.text(this,"Recent notes",18f,true).apply {setPadding(0,dp(26),0,dp(18))};root.addView(recent)
+        grid=GridLayout(this)
+        val scroll=ScrollView(this).apply {addView(grid);isFillViewport=true}
+        root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+        status=NativeUi.text(this,"",13f).apply {gravity=Gravity.CENTER;setPadding(0,dp(10),0,dp(4));setTextColor(NativeUi.MUTED)}
+        root.addView(status);setContentView(root)
+    }
 
-    private fun showNewNoteDialog() {
-        val name = EditText(this).apply {
-            hint = getString(R.string.note_name_hint)
-            setText(R.string.default_note_title)
-            minHeight = resources.getDimensionPixelSize(R.dimen.min_touch_target)
+    override fun onSaveInstanceState(out:Bundle) {super.onSaveInstanceState(out);out.putString("backupId",backupId?:backup?.id)}
+    override fun onResume() {super.onResume();refresh()}
+    private fun refresh() {
+        NotebookIO.submit({NotebookIO.database.list()}) {r->r.onSuccess { docs=it;render() }.onFailure {error(it)} }
+    }
+    private fun render() {
+        grid.removeAllViews();recent.visibility=if(docs.isEmpty())View.GONE else View.VISIBLE
+        val columns=when {resources.configuration.screenWidthDp>=840->3;resources.configuration.screenWidthDp>=600->2;else->1}
+        grid.columnCount=columns
+        val cardWidth=(resources.displayMetrics.widthPixels-dp(56))/columns
+        docs.forEach {note->
+            val card=NativeUi.column(this).apply {
+                background=NativeUi.rounded(Color.WHITE,dp(14).toFloat(),NativeUi.LINE)
+                setPadding(dp(14),dp(14),dp(14),dp(12));elevation=dp(1).toFloat()
+                contentDescription="${note.title}, ${note.pages.size} pages";setOnClickListener {open(note)}
+            }
+            val preview=PagePreviewView(this).apply {page=note.pages.first().spec;strokes=note.pages.first().strokes;setBackgroundColor(Color.WHITE)}
+            val content=NativeUi.row(this)
+            content.addView(preview,LinearLayout.LayoutParams(dp(100),dp(150)))
+            val details=NativeUi.column(this).apply {setPadding(dp(12),0,0,0)}
+            val row=NativeUi.row(this)
+            row.addView(NativeUi.text(this,note.title,17f,true).apply {maxLines=3},LinearLayout.LayoutParams(0,-2,1f))
+            row.addView(NativeUi.button(this,"⋮") {menu(note)}.apply {layoutParams=LinearLayout.LayoutParams(dp(48),dp(48));setPadding(dp(8),0,dp(8),0)})
+            details.addView(row)
+            details.addView(NativeUi.text(this,"${note.pages.size} ${if(note.pages.size==1) "page" else "pages"}",14f).apply {setTextColor(NativeUi.MUTED);setPadding(0,dp(8),0,dp(5))})
+            details.addView(NativeUi.text(this,"Updated ${DateUtils.getRelativeTimeSpanString(note.modified)}",12f).apply {setTextColor(NativeUi.MUTED)})
+            content.addView(details,LinearLayout.LayoutParams(0,-2,1f));card.addView(content)
+            grid.addView(card,GridLayout.LayoutParams().apply {width=cardWidth-dp(12);setMargins(dp(6),dp(6),dp(6),dp(12))})
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.new_note)
-            .setView(name)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.create) { _, _ ->
-                val title = name.text?.toString()?.ifBlank { getString(R.string.default_note_title) }
-                    ?: getString(R.string.default_note_title)
-                val note = store.createNote(title, PaperType.RULED)
-                openNote(note)
+        status.text="";status.visibility=View.GONE
+    }
+    private fun newNote() {
+        val box=NativeUi.column(this).apply {setPadding(dp(24),dp(12),dp(24),dp(8))}
+        box.addView(NativeUi.text(this,"Note name",15f));val title=NativeUi.input(this,"Note name","Untitled note");box.addView(title)
+        box.addView(NativeUi.text(this,"Paper",15f))
+        val paper=RadioGroup(this).apply {orientation=RadioGroup.HORIZONTAL}
+        val lined=RadioButton(this).apply {text="Lined";id=View.generateViewId();isChecked=true;minHeight=dp(48)}
+        val plain=RadioButton(this).apply {text="Plain";id=View.generateViewId();minHeight=dp(48)}
+        paper.addView(lined,RadioGroup.LayoutParams(0,dp(48),1f));paper.addView(plain,RadioGroup.LayoutParams(0,dp(48),1f));box.addView(paper)
+        val previews=NativeUi.row(this)
+        listOf(PaperType.RULED,PaperType.PLAIN).forEach {type->
+            previews.addView(PagePreviewView(this).apply {page=PageSpec(java.util.UUID.randomUUID().toString(),type);contentDescription=if(type==PaperType.RULED)"Lined A4 paper" else "Plain A4 paper";setOnClickListener {if(type==PaperType.RULED)lined.isChecked=true else plain.isChecked=true}},LinearLayout.LayoutParams(0,dp(130),1f).apply {setMargins(dp(8),0,dp(8),0)})
+        };box.addView(previews)
+        box.addView(NativeUi.text(this,"A4 · 210 × 297 mm",14f).apply {setPadding(0,dp(12),0,0)})
+        val dialog=AlertDialog.Builder(this).setTitle("New note").setView(box).setNegativeButton("Cancel",null)
+            .setPositiveButton("Create") {_,_->
+                val note=NotebookDocument(title=title.text.toString().trim().ifEmpty {"Untitled note"},pages=listOf(NotebookPage(PageSpec(java.util.UUID.randomUUID().toString(),if(plain.isChecked) PaperType.PLAIN else PaperType.RULED))))
+                NotebookIO.submit({NotebookIO.database.save(note)}) {r->r.onSuccess {open(note)}.onFailure {error(it)}}
+            }.show()
+        dialog.window?.setLayout(minOf(dp(420),resources.displayMetrics.widthPixels-dp(36)),-2)
+    }
+    private fun menu(note:NotebookDocument) {
+        AlertDialog.Builder(this).setTitle(note.title).setItems(arrayOf("Rename","Duplicate","Backup notebook","Delete")) {_,which->
+            when(which) {
+                0->{val name=NativeUi.input(this,"Note name",note.title)
+                    AlertDialog.Builder(this).setTitle("Rename notebook").setView(name).setNegativeButton("Cancel",null).setPositiveButton("Rename") {_,_->save(note.copy(title=name.text.toString().trim().ifEmpty {note.title},modified=System.currentTimeMillis()))}.show()}
+                1->save(note.duplicate())
+                2->{backup=note;backupId=note.id;saveBackup.launch("${note.title}.weave")}
+                3->AlertDialog.Builder(this).setTitle("Delete ${note.title}?").setMessage("This deletes the notebook and all its pages from this tablet. Export a backup first if you need a copy.")
+                    .setNegativeButton("Cancel",null).setPositiveButton("Delete") {_,_->NotebookIO.submit({NotebookIO.database.delete(note.id)}) {r->r.onSuccess {refresh()}.onFailure {error(it)}}}.show()
             }
-            .show()
+        }.show()
     }
-
-    private fun showNoteMenu(note: NoteMeta) {
-        val items = arrayOf(
-            getString(R.string.rename),
-            getString(R.string.duplicate),
-            getString(R.string.delete)
-        )
-        AlertDialog.Builder(this)
-            .setTitle(note.title)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> renameNote(note)
-                    1 -> {
-                        store.duplicate(note.noteId)
-                        refreshList()
-                    }
-                    2 -> confirmDelete(note)
-                }
-            }
-            .show()
-    }
-
-    private fun renameNote(note: NoteMeta) {
-        val name = EditText(this).apply {
-            setText(note.title)
-            minHeight = resources.getDimensionPixelSize(R.dimen.min_touch_target)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.rename)
-            .setView(name)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.rename) { _, _ ->
-                store.rename(note.noteId, name.text?.toString().orEmpty().ifBlank { note.title })
-                refreshList()
-            }
-            .show()
-    }
-
-    private fun confirmDelete(note: NoteMeta) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.delete)
-            .setMessage(getString(R.string.delete_confirm, note.title))
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.delete) { _, _ ->
-                store.delete(note.noteId)
-                refreshList()
-            }
-            .show()
-    }
-
-    private fun openNote(note: NoteMeta) {
-        startActivity(Intent(this, EditorActivity::class.java).apply {
-            putExtra(EditorActivity.EXTRA_NOTE_TITLE, note.title)
-            putExtra(EditorActivity.EXTRA_NOTE_ID, note.noteId)
-        })
-    }
+    private fun save(note:NotebookDocument) {NotebookIO.submit({NotebookIO.database.save(note)}) {r->r.onSuccess {refresh()}.onFailure {error(it)}}}
+    private fun open(note:NotebookDocument) {startActivity(Intent(this,EditorActivity::class.java).putExtra(EditorActivity.EXTRA_NOTE_ID,note.id))}
+    private fun toast(s:String) {Toast.makeText(this,s,Toast.LENGTH_LONG).show()}
+    private fun error(e:Throwable) {status.visibility=View.GONE;AlertDialog.Builder(this).setTitle("Could not complete operation").setMessage(e.message?:"Please try again. Your saved notebooks have not been removed.").setPositiveButton("OK",null).show()}
 }

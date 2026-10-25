@@ -2,19 +2,9 @@
 <resources>
     <string name="app_name">Weave</string>
     <string name="tagline">Connecting ideas together</string>
-    <string name="bootstrap_status">Bootstrap ready — offline notebook</string>
-    <string name="open_input_probe">Open input probe (debug)</string>
-    <string name="input_probe_title">Weave input probe</string>
-    <string name="input_probe_hint">Debug only. Captures tool type, pointer IDs, size, pressure, CANCEL. Samples stay in memory.</string>
-    <string name="input_probe_surface">Input capture surface</string>
-    <string name="input_probe_clear">Clear</string>
-    <string name="input_probe_report">Report</string>
-    <string name="input_probe_report_template">Identity: %1$s\nFinger: %2$s  Stylus: %3$s  Samples: %4$s\n%5$s</string>
     <string name="a4_preview">A4 page preview</string>
 
     <string name="new_note">New note</string>
-    <string name="library_empty_hint">No notes yet. Create a new note to start writing.</string>
-    <string name="library_local_status">All notes saved locally</string>
     <string name="default_note_title">Untitled note</string>
 
     <string name="back">Back</string>

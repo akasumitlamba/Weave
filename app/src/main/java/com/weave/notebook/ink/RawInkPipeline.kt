@@ -39,10 +39,10 @@ class RawInkPipeline(
     private var pageId: String = ""
 
     /** Raw samples for recoverability. */
-    val provisionalSamples: List<StrokeSample> get() = rawProvisional.toList()
+    val provisionalSamples: List<StrokeSample> get() = rawProvisional
 
     /** Filtered samples for live overlay. */
-    val liveSamples: List<StrokeSample> get() = liveProvisional.toList()
+    val liveSamples: List<StrokeSample> get() = liveProvisional
 
 
     fun configureStroke(pageId: String, brush: BrushKind, colorArgb: Int, widthMm: Float) {
@@ -128,7 +128,7 @@ class RawInkPipeline(
             brush = brush,
             colorArgb = colorArgb,
             widthMm = widthMm,
-            smoothingVersion = StrokeSmoother.SMOOTHING_VERSION
+            smoothingVersion = when(smoother.level) { SmoothingLevel.OFF -> 0; SmoothingLevel.LOW -> 1; SmoothingLevel.MEDIUM -> 2 }
         )
     }
 }
