@@ -263,6 +263,8 @@ class EditorActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_NOTE_TITLE = "extra_note_title"
+        const val EXTRA_NOTE_ID = "extra_note_id"
+
         private const val STATE_TITLE = "state_title"
         private const val STATE_TOOL = "state_tool"
         private const val STATE_WRITE = "state_write"
