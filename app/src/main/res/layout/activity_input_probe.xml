@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/workspace_bg"
+    android:orientation="vertical"
+    android:padding="12dp"
+    tools:context=".input.InputProbeActivity">
+
+    <TextView
+        android:id="@+id/probeTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="@dimen/min_touch_target"
+        android:gravity="center_vertical"
+        android:text="@string/input_probe_title"
+        android:textColor="@color/charcoal"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/input_probe_hint"
+        android:textColor="@color/charcoal"
+        android:textSize="14sp" />
+
+    <com.weave.notebook.input.InputProbeView
+        android:id="@+id/probeView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:contentDescription="@string/input_probe_surface" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/clearButton"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_weight="1"
+            android:text="@string/input_probe_clear" />
+
+        <Button
+            android:id="@+id/reportButton"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:text="@string/input_probe_report" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/reportText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/charcoal"
+        android:textSize="13sp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="140dp"
+        android:layout_marginTop="4dp"
+        android:background="@color/paper_white">
+
+        <TextView
+            android:id="@+id/sampleLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:padding="8dp"
+            android:textColor="@color/charcoal"
+            android:textSize="11sp" />
+    </ScrollView>
+</LinearLayout>
