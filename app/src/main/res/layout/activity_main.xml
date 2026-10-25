@@ -33,5 +33,15 @@
             android:text="@string/bootstrap_status"
             android:textColor="@color/charcoal"
             android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/openProbeButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginTop="24dp"
+            android:minWidth="48dp"
+            android:text="@string/open_input_probe"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>
+

@@ -23,5 +23,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Debug input probe; activity self-finishes in non-debug builds. -->
+        <activity
+            android:name=".input.InputProbeActivity"
+            android:exported="false"
+            android:label="@string/input_probe_title"
+            android:windowSoftInputMode="stateAlwaysHidden" />
     </application>
 </manifest>
+
