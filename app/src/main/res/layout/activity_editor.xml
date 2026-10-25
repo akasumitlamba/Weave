@@ -155,8 +155,8 @@
         </LinearLayout>
     </HorizontalScrollView>
 
-    <com.weave.notebook.render.PagePreviewView
-        android:id="@+id/pagePreview"
+    <com.weave.notebook.ink.InkCanvasView
+        android:id="@+id/inkCanvas"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"

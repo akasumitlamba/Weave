@@ -3,17 +3,16 @@ package com.weave.notebook.ui
 import android.os.Bundle
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
-
 import androidx.core.content.ContextCompat
 import com.weave.notebook.R
 import com.weave.notebook.databinding.ActivityEditorBinding
+import com.weave.notebook.model.BrushKind
 import com.weave.notebook.model.PageSpec
 import com.weave.notebook.model.PaperType
 import java.util.UUID
 
 /**
- * Responsive editor shell: landscape and portrait toolbars, page controls,
- * accessible tool states. Live ink arrives in later milestones.
+ * Editor shell with live raw Pen ink (PR 05). Gesture modes refined in PR 06.
  */
 class EditorActivity : AppCompatActivity() {
 
@@ -42,10 +41,12 @@ class EditorActivity : AppCompatActivity() {
             )
         }
 
-        binding.pagePreview.page = PageSpec(
+        binding.inkCanvas.page = PageSpec(
             pageId = UUID.randomUUID().toString(),
             paperType = PaperType.RULED
         )
+        binding.inkCanvas.brush = BrushKind.PEN
+        binding.inkCanvas.widthMm = 0.45f
 
         wireChrome()
         renderChrome()
@@ -88,8 +89,8 @@ class EditorActivity : AppCompatActivity() {
         }
         binding.fitButton.setOnClickListener {
             chrome.setZoomPercent(100)
-            binding.pagePreview.viewport.fitPage()
-            binding.pagePreview.invalidate()
+            binding.inkCanvas.viewport.fitPage()
+            binding.inkCanvas.invalidate()
             renderChrome()
         }
 
@@ -114,10 +115,10 @@ class EditorActivity : AppCompatActivity() {
 
     private fun applyZoomToPreview() {
         val factor = chrome.state.zoomPercent / 100f
-        val w = binding.pagePreview.width.toFloat().coerceAtLeast(1f)
-        val h = binding.pagePreview.height.toFloat().coerceAtLeast(1f)
-        binding.pagePreview.viewport.setZoom(factor, w / 2f, h / 2f)
-        binding.pagePreview.invalidate()
+        val w = binding.inkCanvas.width.toFloat().coerceAtLeast(1f)
+        val h = binding.inkCanvas.height.toFloat().coerceAtLeast(1f)
+        binding.inkCanvas.viewport.setZoom(factor, w / 2f, h / 2f)
+        binding.inkCanvas.invalidate()
     }
 
     private fun renderChrome() {
@@ -144,6 +145,21 @@ class EditorActivity : AppCompatActivity() {
 
         styleMode(binding.modeWriteButton, s.writeMode)
         styleMode(binding.modeNavigateButton, !s.writeMode)
+
+        binding.inkCanvas.inkEnabled = s.writeMode && s.selectedTool != ToolKind.HAND
+        binding.inkCanvas.brush = when (s.selectedTool) {
+            ToolKind.MARKER -> BrushKind.MARKER
+            ToolKind.HIGHLIGHTER -> BrushKind.HIGHLIGHTER
+            ToolKind.ERASER -> BrushKind.ERASER
+            else -> BrushKind.PEN
+        }
+        // PR 05: Pen ink path primary; other brushes still capture raw samples.
+        binding.inkCanvas.widthMm = when (s.selectedTool) {
+            ToolKind.MARKER -> 2f
+            ToolKind.HIGHLIGHTER -> 5f
+            ToolKind.ERASER -> 4f
+            else -> 0.45f
+        }
     }
 
     private fun styleTool(button: Button, tool: ToolKind) {
