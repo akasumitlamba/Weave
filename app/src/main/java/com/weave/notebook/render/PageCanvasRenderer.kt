@@ -13,6 +13,7 @@ import com.weave.notebook.model.StrokeRecord
 
 /**
  * Draws a page template and strokes in page millimeters via the viewport matrix.
+ * Highlighters render as a single filled outline below opaque ink.
  */
 class PageCanvasRenderer {
 
@@ -22,7 +23,6 @@ class PageCanvasRenderer {
     }
     private val rulePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 0f // hairline in page space scaled by matrix... use mm width
         color = 0xFFB0B6B8.toInt()
     }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -35,6 +35,9 @@ class PageCanvasRenderer {
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
     private val path = Path()
 
     fun drawPage(
@@ -43,9 +46,8 @@ class PageCanvasRenderer {
         page: PageSpec,
         strokes: List<StrokeRecord>
     ) {
-        val matrix = viewport.copyPageToScreenMatrix()
         canvas.save()
-        canvas.concat(matrix)
+        canvas.concat(viewport.copyPageToScreenMatrix())
 
         canvas.drawRect(0f, 0f, page.widthMm, page.heightMm, paperPaint)
         if (page.paperType == PaperType.RULED) {
@@ -55,8 +57,8 @@ class PageCanvasRenderer {
 
         val highlighters = strokes.filter { it.brush == BrushKind.HIGHLIGHTER }
         val opaque = strokes.filter { it.brush != BrushKind.HIGHLIGHTER && it.brush != BrushKind.ERASER }
-        for (s in highlighters) drawStroke(canvas, s)
-        for (s in opaque) drawStroke(canvas, s)
+        for (s in highlighters) drawHighlighter(canvas, s)
+        for (s in opaque) drawOpaqueStroke(canvas, s)
 
         canvas.restore()
     }
@@ -72,11 +74,11 @@ class PageCanvasRenderer {
         }
     }
 
-    private fun drawStroke(canvas: Canvas, stroke: StrokeRecord) {
+    private fun drawOpaqueStroke(canvas: Canvas, stroke: StrokeRecord) {
         if (stroke.samples.isEmpty()) return
+        strokePaint.style = Paint.Style.STROKE
         strokePaint.color = stroke.colorArgb
         strokePaint.strokeWidth = stroke.widthMm
-        strokePaint.alpha = (stroke.colorArgb ushr 24) and 0xFF
         path.reset()
         val first = stroke.samples.first()
         path.moveTo(first.xMm, first.yMm)
@@ -91,6 +93,12 @@ class PageCanvasRenderer {
         canvas.drawPath(path, strokePaint)
     }
 
-    /** Identity helper for tests that need a matrix without a view. */
+    private fun drawHighlighter(canvas: Canvas, stroke: StrokeRecord) {
+        if (stroke.samples.isEmpty()) return
+        fillPaint.color = stroke.colorArgb
+        val outline = StrokeOutlineBuilder.buildFilledOutline(stroke.samples, stroke.widthMm)
+        canvas.drawPath(outline, fillPaint)
+    }
+
     fun identityMatrix(): Matrix = Matrix()
 }
