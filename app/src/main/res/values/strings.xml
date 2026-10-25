@@ -10,5 +10,7 @@
     <string name="input_probe_clear">Clear</string>
     <string name="input_probe_report">Report</string>
     <string name="input_probe_report_template">Identity: %1$s\nFinger: %2$s  Stylus: %3$s  Samples: %4$s\n%5$s</string>
+    <string name="a4_preview">A4 page preview</string>
 </resources>
+
 
