@@ -239,5 +239,15 @@
             android:minWidth="@dimen/min_touch_target"
             android:text="@string/mode_navigate"
             android:contentDescription="@string/mode_navigate" />
+
+        <Button
+            android:id="@+id/palmGuardButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/palm_guard"
+            android:contentDescription="@string/palm_guard_hint" />
     </LinearLayout>
 </LinearLayout>
+

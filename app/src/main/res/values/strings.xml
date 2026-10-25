@@ -38,4 +38,7 @@
     <string name="fit">Fit</string>
     <string name="mode_write">Write</string>
     <string name="mode_navigate">Navigate</string>
+    <string name="palm_guard">Palm guard</string>
+    <string name="palm_guard_hint">Palm guards block touch locally. Passive is not true hardware palm rejection.</string>
 </resources>
+
