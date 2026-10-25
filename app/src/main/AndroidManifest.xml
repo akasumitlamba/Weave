@@ -14,15 +14,26 @@
         android:usesCleartextTraffic="false">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.LibraryActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="stateAlwaysHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ui.EditorActivity"
+            android:exported="false"
+            android:windowSoftInputMode="stateAlwaysHidden"
+            android:label="@string/default_note_title" />
+
+        <!-- Kept for debug deep-links / older evidence; not the launcher. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:windowSoftInputMode="stateAlwaysHidden" />
 
         <!-- Debug input probe; activity self-finishes in non-debug builds. -->
         <activity
@@ -32,4 +43,3 @@
             android:windowSoftInputMode="stateAlwaysHidden" />
     </application>
 </manifest>
-

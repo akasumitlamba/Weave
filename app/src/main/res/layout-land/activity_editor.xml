@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Landscape: top metadata + tools, centered A4 viewport, bottom mode/zoom. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/editorRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/workspace_bg"
+    android:orientation="vertical"
+    tools:context=".ui.EditorActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <Button
+            android:id="@+id/backButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/back"
+            android:contentDescription="@string/back" />
+
+        <TextView
+            android:id="@+id/noteTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:maxWidth="280dp"
+            android:textColor="@color/charcoal"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:text="Physics notes" />
+
+        <TextView
+            android:id="@+id/saveStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:gravity="center_vertical"
+            android:text="@string/save_saved"
+            android:textColor="@color/charcoal"
+            android:textSize="14sp" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/undoButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/undo" />
+
+        <Button
+            android:id="@+id/redoButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/redo" />
+
+        <Button
+            android:id="@+id/pagesButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/pages" />
+
+        <Button
+            android:id="@+id/exportButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/export" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="4dp">
+
+        <Button
+            android:id="@+id/toolPen"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/tool_pen" />
+
+        <Button
+            android:id="@+id/toolMarker"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/tool_marker" />
+
+        <Button
+            android:id="@+id/toolHighlighter"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/tool_highlighter" />
+
+        <Button
+            android:id="@+id/toolEraser"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/tool_eraser" />
+
+        <Button
+            android:id="@+id/toolHand"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/tool_hand" />
+    </LinearLayout>
+
+    <com.weave.notebook.render.PagePreviewView
+        android:id="@+id/pagePreview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:contentDescription="@string/a4_preview" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/pageStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/min_touch_target"
+            android:gravity="center_vertical"
+            android:textColor="@color/charcoal"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/zoomOutButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="12dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/zoom_out" />
+
+        <TextView
+            android:id="@+id/zoomStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:gravity="center"
+            android:textColor="@color/charcoal"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/zoomInButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/zoom_in" />
+
+        <Button
+            android:id="@+id/fitButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/fit" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/modeWriteButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/mode_write" />
+
+        <Button
+            android:id="@+id/modeNavigateButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/min_touch_target"
+            android:layout_marginStart="4dp"
+            android:minWidth="@dimen/min_touch_target"
+            android:text="@string/mode_navigate" />
+    </LinearLayout>
+</LinearLayout>

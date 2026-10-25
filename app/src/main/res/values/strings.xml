@@ -11,6 +11,31 @@
     <string name="input_probe_report">Report</string>
     <string name="input_probe_report_template">Identity: %1$s\nFinger: %2$s  Stylus: %3$s  Samples: %4$s\n%5$s</string>
     <string name="a4_preview">A4 page preview</string>
+
+    <string name="new_note">New note</string>
+    <string name="library_empty_hint">No notes yet. Create a new note to start writing.</string>
+    <string name="library_local_status">All notes saved locally</string>
+    <string name="default_note_title">Untitled note</string>
+
+    <string name="back">Back</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="pages">Pages</string>
+    <string name="export">Export</string>
+    <string name="tool_pen">Pen</string>
+    <string name="tool_marker">Marker</string>
+    <string name="tool_highlighter">Highlighter</string>
+    <string name="tool_eraser">Eraser</string>
+    <string name="tool_hand">Hand</string>
+    <string name="tool_content_desc">Tool %1$s</string>
+    <string name="save_saving">Saving</string>
+    <string name="save_saved">Saved</string>
+    <string name="save_failed">Save failed</string>
+    <string name="page_status">Page %1$d of %2$d</string>
+    <string name="zoom_status">%1$d%%</string>
+    <string name="zoom_out">−</string>
+    <string name="zoom_in">+</string>
+    <string name="fit">Fit</string>
+    <string name="mode_write">Write</string>
+    <string name="mode_navigate">Navigate</string>
 </resources>
-
-
