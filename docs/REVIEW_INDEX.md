@@ -39,7 +39,7 @@ PR 23 is a fast-forward ancestor of this handoff branch; include it in Sumit’s
 | 21 | milestone/21-rendering-perf | milestone/20-export-ui | https://github.com/akasumitlamba/Weave/pull/21 | 586c868 |
 | 22 | milestone/22-integration-suite | milestone/21-rendering-perf | https://github.com/akasumitlamba/Weave/pull/22 | 4463d22 |
 | 23 | milestone/23-usability-a11y | milestone/22-integration-suite | https://github.com/akasumitlamba/Weave/pull/23 | e1b890a |
-| 24 | milestone/24-release-handoff | milestone/23-usability-a11y | (this PR) | (see commit) |
+| 24 | milestone/24-release-handoff | milestone/23-usability-a11y | https://github.com/akasumitlamba/Weave/pull/24 | 1eac1e5 |
 
 ## Device gates (all honest)
 | Gate | Status |
