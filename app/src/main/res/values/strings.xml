@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Weave</string>
+    <string name="tagline">Connecting ideas together</string>
+    <string name="bootstrap_status">Bootstrap ready — offline notebook</string>
+</resources>
