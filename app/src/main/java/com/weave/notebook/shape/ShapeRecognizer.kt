@@ -1,12 +1,14 @@
 package com.weave.notebook.shape
 
 import com.weave.notebook.model.FittedShape
+import com.weave.notebook.model.PolygonKind
 import com.weave.notebook.model.StrokeSample
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+
 
 data class ShapeCandidate(
     val shape: FittedShape,
@@ -15,7 +17,7 @@ data class ShapeCandidate(
 )
 
 /**
- * Lightweight geometry for hold-to-recognize: line, circle, ellipse first.
+ * Lightweight geometry for hold-to-recognize including closed polygons.
  * Conservative thresholds prefer freehand over false snaps.
  */
 class ShapeRecognizer(
@@ -32,7 +34,8 @@ class ShapeRecognizer(
         val line = fitLine(samples)
         val circle = fitCircle(samples)
         val ellipse = fitEllipse(samples)
-        val ranked = listOfNotNull(line, circle, ellipse).sortedByDescending { it.confidence }
+        val polygon = fitPolygon(samples)
+        val ranked = listOfNotNull(line, circle, ellipse, polygon).sortedByDescending { it.confidence }
         if (ranked.isEmpty()) return null
         val best = ranked.first()
         val second = ranked.getOrNull(1)?.confidence ?: 0f
@@ -106,6 +109,82 @@ class ShapeRecognizer(
         err /= samples.size
         val score = (1f - (err / 0.35f).coerceIn(0f, 1f)) * 0.95f
         return ShapeCandidate(FittedShape.Ellipse(cx, cy, rx, ry, 0f), score, "ellipse")
+    }
+
+    private fun fitPolygon(samples: List<StrokeSample>): ShapeCandidate? {
+        val closure = hypot(samples.first().xMm - samples.last().xMm, samples.first().yMm - samples.last().yMm)
+        val pathLen = pathLength(samples)
+        if (closure > pathLen * 0.2f) return null
+        var corners = detectCorners(samples)
+        // Fallback: axis-aligned bounding box corners when angle detection under-counts.
+        if (corners.size !in 3..4) {
+            val minX = samples.minOf { it.xMm }
+            val maxX = samples.maxOf { it.xMm }
+            val minY = samples.minOf { it.yMm }
+            val maxY = samples.maxOf { it.yMm }
+            val w = maxX - minX
+            val h = maxY - minY
+            if (w < 5f || h < 5f) return null
+            // Triangle heuristic: one side much shorter in convex hull sense via mid-edge density.
+            val nearTop = samples.count { abs(it.yMm - minY) < h * 0.08f }
+            val nearBottom = samples.count { abs(it.yMm - maxY) < h * 0.08f }
+            corners = if (nearTop < nearBottom * 0.45f || nearBottom < nearTop * 0.45f) {
+                listOf(minX to maxY, maxX to maxY, (minX + maxX) / 2f to minY)
+            } else {
+                listOf(minX to minY, maxX to minY, maxX to maxY, minX to maxY)
+            }
+        }
+        return when (corners.size) {
+            3 -> {
+                val score = 0.84f
+                ShapeCandidate(FittedShape.Polygon(corners, PolygonKind.TRIANGLE), score, "triangle")
+            }
+            4 -> {
+                val sides = (0 until 4).map { i ->
+                    hypot(corners[(i + 1) % 4].first - corners[i].first, corners[(i + 1) % 4].second - corners[i].second)
+                }
+                val mean = sides.average().toFloat().coerceAtLeast(1e-3f)
+                val ratioSpread = sides.map { abs(it - mean) / mean }.average().toFloat()
+                val kind = if (ratioSpread < 0.15f) PolygonKind.SQUARE else PolygonKind.RECTANGLE
+                val score = if (kind == PolygonKind.SQUARE) 0.86f else 0.84f
+                ShapeCandidate(FittedShape.Polygon(corners, kind), score, kind.name.lowercase())
+            }
+            else -> null
+        }
+    }
+
+    private fun detectCorners(samples: List<StrokeSample>): List<Pair<Float, Float>> {
+        if (samples.size < 6) return emptyList()
+        val corners = mutableListOf<Pair<Float, Float>>()
+        corners += samples.first().xMm to samples.first().yMm
+        val step = max(1, samples.size / 24)
+        for (i in step until samples.size - step step step) {
+            val a = samples[i - step]
+            val b = samples[i]
+            val c = samples[i + step]
+            val abx = b.xMm - a.xMm
+            val aby = b.yMm - a.yMm
+            val bcx = c.xMm - b.xMm
+            val bcy = c.yMm - b.yMm
+            val mag = hypot(abx, aby) * hypot(bcx, bcy)
+            if (mag < 1e-3f) continue
+            val cos = ((abx * bcx + aby * bcy) / mag).coerceIn(-1f, 1f)
+            if (cos < 0.3f) {
+                val last = corners.last()
+                if (hypot(b.xMm - last.first, b.yMm - last.second) > 4f) {
+                    corners += b.xMm to b.yMm
+                }
+            }
+        }
+        val end = samples.last().xMm to samples.last().yMm
+        if (hypot(end.first - corners.last().first, end.second - corners.last().second) > 4f) {
+            corners += end
+        }
+        // Merge near-closed endpoints for closed polygons.
+        if (corners.size >= 3 && hypot(corners.first().first - corners.last().first, corners.first().second - corners.last().second) < 6f) {
+            corners.removeAt(corners.lastIndex)
+        }
+        return corners
     }
 
     private fun pathLength(samples: List<StrokeSample>): Float {
