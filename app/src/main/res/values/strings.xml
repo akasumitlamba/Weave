@@ -49,4 +49,9 @@
     <string name="note_name_hint">Note name</string>
     <string name="note_meta_format">%1$d pages · %2$s</string>
     <string name="more_menu">⋮</string>
+
+    <string name="first_run_title">Welcome to Weave</string>
+    <string name="first_run_body">Weave is offline. A passive stylus may look like a finger. Use palm guards and Navigate mode to reduce accidental marks. This is not hardware palm rejection.</string>
+    <string name="smoothing_pref">Handwriting smoothing</string>
+    <string name="guard_settings">Palm guard settings</string>
 </resources>
