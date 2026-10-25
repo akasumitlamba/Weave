@@ -11,7 +11,9 @@ import com.weave.notebook.guards.GuardEdge
 import com.weave.notebook.model.BrushKind
 import com.weave.notebook.model.PageSpec
 import com.weave.notebook.model.PaperType
+import com.weave.notebook.tools.ToolSettings
 import java.util.UUID
+
 
 
 /**
@@ -21,6 +23,8 @@ class EditorActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityEditorBinding
     private val chrome = EditorChromeController()
+    private var toolSettings = ToolSettings()
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -167,19 +171,18 @@ class EditorActivity : AppCompatActivity() {
         styleMode(binding.modeNavigateButton, !s.writeMode)
 
         binding.inkCanvas.inkEnabled = s.writeMode && s.selectedTool != ToolKind.HAND
-        binding.inkCanvas.brush = when (s.selectedTool) {
+        val brush = when (s.selectedTool) {
             ToolKind.MARKER -> BrushKind.MARKER
             ToolKind.HIGHLIGHTER -> BrushKind.HIGHLIGHTER
             ToolKind.ERASER -> BrushKind.ERASER
             else -> BrushKind.PEN
         }
-        // PR 05: Pen ink path primary; other brushes still capture raw samples.
-        binding.inkCanvas.widthMm = when (s.selectedTool) {
-            ToolKind.MARKER -> 2f
-            ToolKind.HIGHLIGHTER -> 5f
-            ToolKind.ERASER -> 4f
-            else -> 0.45f
+        if (toolSettings.brush != brush) {
+            toolSettings = toolSettings.withBrush(brush)
         }
+        binding.inkCanvas.brush = toolSettings.brush
+        binding.inkCanvas.widthMm = toolSettings.widthMm
+        binding.inkCanvas.colorArgb = toolSettings.colorArgb
     }
 
     private fun styleTool(button: Button, tool: ToolKind) {
