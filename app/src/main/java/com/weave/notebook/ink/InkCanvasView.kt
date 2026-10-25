@@ -10,6 +10,7 @@ import android.view.View
 import androidx.core.content.ContextCompat
 import com.weave.notebook.R
 import com.weave.notebook.geom.ViewportTransform
+import com.weave.notebook.gesture.GestureArbiter
 import com.weave.notebook.model.BrushKind
 import com.weave.notebook.model.PageSpec
 import com.weave.notebook.model.PaperType
@@ -18,8 +19,7 @@ import com.weave.notebook.render.PageCanvasRenderer
 import java.util.UUID
 
 /**
- * Custom Canvas drawing View: cached page + current stroke overlay.
- * Historical MotionEvent samples are consumed in order; CANCEL clears provisional ink.
+ * Custom Canvas drawing View with Write/Navigate gesture arbitration.
  */
 class InkCanvasView @JvmOverloads constructor(
     context: Context,
@@ -29,6 +29,7 @@ class InkCanvasView @JvmOverloads constructor(
     private val renderer = PageCanvasRenderer()
     val viewport = ViewportTransform()
     val pipeline = RawInkPipeline()
+    val arbiter = GestureArbiter()
 
     var page: PageSpec = PageSpec(pageId = UUID.randomUUID().toString(), paperType = PaperType.RULED)
         set(value) {
@@ -61,8 +62,13 @@ class InkCanvasView @JvmOverloads constructor(
             pipeline.configureStroke(page.pageId, brush, colorArgb, value)
         }
 
-    /** When false, touches are ignored for ink (Navigate mode / Hand tool). */
     var inkEnabled: Boolean = true
+        set(value) {
+            field = value
+            arbiter.setMode(
+                if (value) GestureArbiter.Mode.WRITE else GestureArbiter.Mode.NAVIGATE
+            )
+        }
 
     var onStrokeCommitted: ((StrokeRecord) -> Unit)? = null
 
@@ -83,44 +89,80 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!inkEnabled) return false
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val p = pointFrom(event, event.actionIndex, historical = false)
-                pipeline.onDown(p)
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val touch = touchFrom(event, event.actionIndex)
+                when (arbiter.onDown(touch)) {
+                    GestureArbiter.Action.START_STROKE -> {
+                        pipeline.onDown(
+                            RawInkPipeline.PointerPoint(touch.pointerId, touch.xMm, touch.yMm, touch.tMs)
+                        )
+                    }
+                    GestureArbiter.Action.CANCEL_STROKE -> pipeline.onCancel()
+                    else -> Unit
+                }
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val batch = ArrayList<RawInkPipeline.PointerPoint>()
-                for (h in 0 until event.historySize) {
-                    for (i in 0 until event.pointerCount) {
-                        batch += pointFromHistorical(event, i, h)
+                val touches = buildList {
+                    for (h in 0 until event.historySize) {
+                        for (i in 0 until event.pointerCount) {
+                            add(historicalTouch(event, i, h))
+                        }
                     }
+                    for (i in 0 until event.pointerCount) add(touchFrom(event, i))
                 }
-                for (i in 0 until event.pointerCount) {
-                    batch += pointFrom(event, i, historical = false)
+                when (arbiter.onMove(touches)) {
+                    GestureArbiter.Action.APPEND_STROKE -> {
+                        val owner = arbiter.activeStrokePointerId()
+                        pipeline.onMove(
+                            touches.filter { it.pointerId == owner }.map {
+                                RawInkPipeline.PointerPoint(it.pointerId, it.xMm, it.yMm, it.tMs)
+                            }
+                        )
+                    }
+                    GestureArbiter.Action.CANCEL_STROKE -> pipeline.onCancel()
+                    GestureArbiter.Action.PAN -> {
+                        val (dxMm, dyMm) = arbiter.panDeltaMm()
+                        val dxPx = dxMm / viewport.mmPerPixel()
+                        val dyPx = dyMm / viewport.mmPerPixel()
+                        viewport.panBy(dxPx, dyPx)
+                    }
+                    GestureArbiter.Action.PINCH -> {
+                        val factor = arbiter.pinchScaleFactor()
+                        val newZoom = (viewport.zoom * factor).coerceIn(
+                            ViewportTransform.MIN_ZOOM,
+                            ViewportTransform.MAX_ZOOM
+                        )
+                        viewport.setZoom(newZoom, width / 2f, height / 2f)
+                    }
+                    else -> Unit
                 }
-                pipeline.onMove(batch)
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
-                if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) {
-                    // Non-owner lift ignored for now; PR 06 handles multi-touch cancel.
-                    val id = event.getPointerId(event.actionIndex)
-                    if (id != pipeline.activePointerId) return true
-                }
-                val p = pointFrom(event, event.actionIndex, historical = false)
-                val committed = pipeline.onUp(p)
-                if (committed != null) {
-                    strokes.add(committed)
-                    onStrokeCommitted?.invoke(committed)
+                val id = event.getPointerId(event.actionIndex)
+                val touch = touchFrom(event, event.actionIndex)
+                when (arbiter.onUp(id)) {
+                    GestureArbiter.Action.END_STROKE -> {
+                        val committed = pipeline.onUp(
+                            RawInkPipeline.PointerPoint(touch.pointerId, touch.xMm, touch.yMm, touch.tMs)
+                        )
+                        if (committed != null) {
+                            strokes.add(committed)
+                            onStrokeCommitted?.invoke(committed)
+                        }
+                    }
+                    GestureArbiter.Action.CANCEL_STROKE -> pipeline.onCancel()
+                    else -> Unit
                 }
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                arbiter.onCancel()
                 pipeline.onCancel()
                 invalidate()
                 return true
@@ -155,29 +197,27 @@ class InkCanvasView @JvmOverloads constructor(
         canvas.drawPath(livePath, livePaint)
     }
 
-    private fun pointFrom(event: MotionEvent, index: Int, historical: Boolean): RawInkPipeline.PointerPoint {
+    private fun touchFrom(event: MotionEvent, index: Int): GestureArbiter.Touch {
         viewport.screenToPage(event.getX(index), event.getY(index), pagePoint)
-        return RawInkPipeline.PointerPoint(
+        return GestureArbiter.Touch(
             pointerId = event.getPointerId(index),
             xMm = pagePoint[0],
             yMm = pagePoint[1],
-            tMs = event.eventTime,
-            historical = historical
+            tMs = event.eventTime
         )
     }
 
-    private fun pointFromHistorical(event: MotionEvent, index: Int, historyPos: Int): RawInkPipeline.PointerPoint {
+    private fun historicalTouch(event: MotionEvent, index: Int, historyPos: Int): GestureArbiter.Touch {
         viewport.screenToPage(
             event.getHistoricalX(index, historyPos),
             event.getHistoricalY(index, historyPos),
             pagePoint
         )
-        return RawInkPipeline.PointerPoint(
+        return GestureArbiter.Touch(
             pointerId = event.getPointerId(index),
             xMm = pagePoint[0],
             yMm = pagePoint[1],
-            tMs = event.getHistoricalEventTime(historyPos),
-            historical = true
+            tMs = event.getHistoricalEventTime(historyPos)
         )
     }
 }
