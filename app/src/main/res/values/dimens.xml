@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="min_touch_target">48dp</dimen>
+    <dimen name="body_text">16sp</dimen>
+    <dimen name="label_text">14sp</dimen>
+</resources>

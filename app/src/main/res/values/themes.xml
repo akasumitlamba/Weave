@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Weave" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/teal_selection</item>
+        <item name="colorPrimaryVariant">@color/teal_selection</item>
+        <item name="colorOnPrimary">@color/paper_white</item>
+        <item name="colorSecondary">@color/charcoal</item>
+        <item name="android:statusBarColor">@color/workspace_bg</item>
+        <item name="android:navigationBarColor">@color/workspace_bg</item>
+        <item name="android:windowBackground">@color/workspace_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
