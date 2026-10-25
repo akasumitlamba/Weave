@@ -85,4 +85,60 @@ class InMemoryNoteStore {
     fun replacePageStrokes(pageId: String, next: List<StrokeRecord>) {
         strokes[pageId] = next.toMutableList()
     }
+
+    fun addPage(noteId: String, paper: PaperType = PaperType.RULED, ruleSpacingMm: Float = 8f): PageSpec? {
+        val note = notes[noteId] ?: return null
+        val pageId = UUID.randomUUID().toString()
+        val page = PageSpec(pageId = pageId, paperType = paper, ruleSpacingMm = ruleSpacingMm)
+        pages[pageId] = page
+        strokes[pageId] = mutableListOf()
+        notes[noteId] = note.copy(pageIds = note.pageIds + pageId, modifiedAtMs = System.currentTimeMillis())
+        return page
+    }
+
+    fun duplicatePage(noteId: String, pageId: String): PageSpec? {
+        val note = notes[noteId] ?: return null
+        val src = pages[pageId] ?: return null
+        val idx = note.pageIds.indexOf(pageId)
+        if (idx < 0) return null
+        val newId = UUID.randomUUID().toString()
+        val page = src.copy(pageId = newId)
+        pages[newId] = page
+        strokes[newId] = strokes[pageId]?.map {
+            it.copy(strokeId = UUID.randomUUID().toString(), pageId = newId)
+        }?.toMutableList() ?: mutableListOf()
+        val ids = note.pageIds.toMutableList()
+        ids.add(idx + 1, newId)
+        notes[noteId] = note.copy(pageIds = ids, modifiedAtMs = System.currentTimeMillis())
+        return page
+    }
+
+    fun reorderPages(noteId: String, fromIndex: Int, toIndex: Int): Boolean {
+        val note = notes[noteId] ?: return false
+        if (fromIndex !in note.pageIds.indices || toIndex !in note.pageIds.indices) return false
+        val ids = note.pageIds.toMutableList()
+        val item = ids.removeAt(fromIndex)
+        ids.add(toIndex, item)
+        notes[noteId] = note.copy(pageIds = ids, modifiedAtMs = System.currentTimeMillis())
+        return true
+    }
+
+    fun deletePage(noteId: String, pageId: String): Boolean {
+        val note = notes[noteId] ?: return false
+        if (note.pageIds.size <= 1) return false // retain at least one page
+        if (pageId !in note.pageIds) return false
+        val ids = note.pageIds.filterNot { it == pageId }
+        pages.remove(pageId)
+        strokes.remove(pageId)
+        notes[noteId] = note.copy(pageIds = ids, modifiedAtMs = System.currentTimeMillis())
+        return true
+    }
+
+    fun setPageTemplate(pageId: String, paper: PaperType, ruleSpacingMm: Float = 8f): Boolean {
+        val page = pages[pageId] ?: return false
+        // Template change never rescales or moves ink.
+        pages[pageId] = page.copy(paperType = paper, ruleSpacingMm = ruleSpacingMm)
+        return true
+    }
 }
+
