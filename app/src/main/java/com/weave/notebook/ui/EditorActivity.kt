@@ -4,12 +4,15 @@ import android.os.Bundle
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import android.widget.Toast
 import com.weave.notebook.R
 import com.weave.notebook.databinding.ActivityEditorBinding
+import com.weave.notebook.guards.GuardEdge
 import com.weave.notebook.model.BrushKind
 import com.weave.notebook.model.PageSpec
 import com.weave.notebook.model.PaperType
 import java.util.UUID
+
 
 /**
  * Editor shell with live raw Pen ink (PR 05). Gesture modes refined in PR 06.
@@ -102,6 +105,23 @@ class EditorActivity : AppCompatActivity() {
         binding.modeNavigateButton.setOnClickListener {
             chrome.setWriteMode(false)
             renderChrome()
+        }
+
+        binding.palmGuardButton.setOnClickListener {
+            val g = binding.inkCanvas.palmGuards
+            val next = when (g.guard.edge) {
+                GuardEdge.BOTTOM -> GuardEdge.LEFT
+                GuardEdge.LEFT -> GuardEdge.RIGHT
+                GuardEdge.RIGHT -> GuardEdge.BOTTOM
+            }
+            g.setHandedness(next)
+            Toast.makeText(this, R.string.palm_guard_hint, Toast.LENGTH_SHORT).show()
+            binding.inkCanvas.invalidate()
+        }
+        binding.palmGuardButton.setOnLongClickListener {
+            val g = binding.inkCanvas.palmGuards
+            g.setLocked(!g.guard.locked)
+            true
         }
     }
 

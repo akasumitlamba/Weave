@@ -11,12 +11,15 @@ import androidx.core.content.ContextCompat
 import com.weave.notebook.R
 import com.weave.notebook.geom.ViewportTransform
 import com.weave.notebook.gesture.GestureArbiter
+import com.weave.notebook.guards.GuardEdge
+import com.weave.notebook.guards.PalmGuardController
 import com.weave.notebook.model.BrushKind
 import com.weave.notebook.model.PageSpec
 import com.weave.notebook.model.PaperType
 import com.weave.notebook.model.StrokeRecord
 import com.weave.notebook.render.PageCanvasRenderer
 import java.util.UUID
+
 
 /**
  * Custom Canvas drawing View with Write/Navigate gesture arbitration.
@@ -30,6 +33,19 @@ class InkCanvasView @JvmOverloads constructor(
     val viewport = ViewportTransform()
     val pipeline = RawInkPipeline()
     val arbiter = GestureArbiter()
+    val palmGuards = PalmGuardController()
+
+    private val blockedPointerIds = HashSet<Int>()
+    private val guardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = 0x66252A2D
+    }
+    private val guardStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = 0xFF252A2D.toInt()
+    }
+
 
     var page: PageSpec = PageSpec(pageId = UUID.randomUUID().toString(), paperType = PaperType.RULED)
         set(value) {
@@ -91,7 +107,17 @@ class InkCanvasView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                val touch = touchFrom(event, event.actionIndex)
+                val index = event.actionIndex
+                val screenX = event.getX(index)
+                val screenY = event.getY(index)
+                val pointerId = event.getPointerId(index)
+                if (palmGuards.blocksInkOrigin(screenX, screenY, width.toFloat(), height.toFloat())) {
+                    blockedPointerIds.add(pointerId)
+                    // Guard contacts never become ink, even if dragged outside.
+                    invalidate()
+                    return true
+                }
+                val touch = touchFrom(event, index)
                 when (arbiter.onDown(touch)) {
                     GestureArbiter.Action.START_STROKE -> {
                         pipeline.onDown(
@@ -108,10 +134,18 @@ class InkCanvasView @JvmOverloads constructor(
                 val touches = buildList {
                     for (h in 0 until event.historySize) {
                         for (i in 0 until event.pointerCount) {
+                            if (event.getPointerId(i) in blockedPointerIds) continue
                             add(historicalTouch(event, i, h))
                         }
                     }
-                    for (i in 0 until event.pointerCount) add(touchFrom(event, i))
+                    for (i in 0 until event.pointerCount) {
+                        if (event.getPointerId(i) in blockedPointerIds) continue
+                        add(touchFrom(event, i))
+                    }
+                }
+                if (touches.isEmpty()) {
+                    invalidate()
+                    return true
                 }
                 when (arbiter.onMove(touches)) {
                     GestureArbiter.Action.APPEND_STROKE -> {
@@ -144,6 +178,10 @@ class InkCanvasView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val id = event.getPointerId(event.actionIndex)
+                if (blockedPointerIds.remove(id)) {
+                    invalidate()
+                    return true
+                }
                 val touch = touchFrom(event, event.actionIndex)
                 when (arbiter.onUp(id)) {
                     GestureArbiter.Action.END_STROKE -> {
@@ -162,6 +200,7 @@ class InkCanvasView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                blockedPointerIds.clear()
                 arbiter.onCancel()
                 pipeline.onCancel()
                 invalidate()
@@ -176,6 +215,25 @@ class InkCanvasView @JvmOverloads constructor(
         canvas.drawColor(ContextCompat.getColor(context, R.color.workspace_bg))
         renderer.drawPage(canvas, viewport, page, strokes)
         drawProvisional(canvas)
+        drawGuardOverlay(canvas)
+    }
+
+    private fun drawGuardOverlay(canvas: Canvas) {
+        if (!palmGuards.guard.enabled) return
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val s = palmGuards.guard.sizePx
+        when (palmGuards.guard.edge) {
+            GuardEdge.BOTTOM -> canvas.drawRect(0f, h - s, w, h, guardPaint)
+            GuardEdge.LEFT -> canvas.drawRect(0f, 0f, s, h, guardPaint)
+            GuardEdge.RIGHT -> canvas.drawRect(w - s, 0f, w, h, guardPaint)
+        }
+        // Drag handle cue (non-interactive chrome for now; resize via controller API).
+        when (palmGuards.guard.edge) {
+            GuardEdge.BOTTOM -> canvas.drawLine(w / 2f - 40f, h - s, w / 2f + 40f, h - s, guardStrokePaint)
+            GuardEdge.LEFT -> canvas.drawLine(s, h / 2f - 40f, s, h / 2f + 40f, guardStrokePaint)
+            GuardEdge.RIGHT -> canvas.drawLine(w - s, h / 2f - 40f, w - s, h / 2f + 40f, guardStrokePaint)
+        }
     }
 
     private fun drawProvisional(canvas: Canvas) {
