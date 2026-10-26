@@ -19,6 +19,8 @@ class LineIcon(private val name:String,private val tint:Int=NativeUi.TEXT,privat
             "Redo"->{c.save();c.scale(-1f,1f,12f,12f);path(8f,4f,3f,9f,8f,14f);path(3f,9f,14f,9f);c.drawArc(10f,9f,22f,21f,-90f,230f,false,p);c.restore()}
             "Pages","Paper"->{path(6f,3f,15f,3f,20f,8f,20f,21f,6f,21f,6f,3f);path(14f,3f,14f,9f,20f,9f)}
             "Export PDF","Backup notebook"->{path(4f,13f,4f,21f,20f,21f,20f,13f);path(12f,16f,12f,3f,7f,8f);path(12f,3f,17f,8f)}
+            "Fullscreen"->{path(8f,3f,3f,3f,3f,8f);path(3f,3f,9f,9f);path(16f,3f,21f,3f,21f,8f);path(21f,3f,15f,9f);path(3f,16f,3f,21f,8f,21f);path(3f,21f,9f,15f);path(16f,21f,21f,21f,21f,16f);path(21f,21f,15f,15f)}
+            "Exit fullscreen"->{path(3f,8f,8f,8f,8f,3f);path(21f,8f,16f,8f,16f,3f);path(3f,16f,8f,16f,8f,21f);path(21f,16f,16f,16f,16f,21f)}
             "Fit","Fit width"->{path(8f,3f,3f,3f,3f,8f);path(16f,3f,21f,3f,21f,8f);path(3f,16f,3f,21f,8f,21f);path(16f,21f,21f,21f,21f,16f)}
             "Back","‹"->path(15f,5f,8f,12f,15f,19f)
             "›"->path(9f,5f,16f,12f,9f,19f)

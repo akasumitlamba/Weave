@@ -78,6 +78,7 @@ class ExportActivity:AppCompatActivity() {
     }
     override fun onCreate(state:Bundle?) {
         super.onCreate(state)
+        NativeUi.applyTheme(this)
         restored=state
         chosenIndices=state?.getIntArray("chosen")?:IntArray(0)
         includeLines=state?.getBoolean("includeLines",true)?:true

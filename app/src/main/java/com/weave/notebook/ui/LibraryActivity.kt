@@ -1,5 +1,6 @@
 package com.weave.notebook.ui
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -17,6 +18,7 @@ import com.weave.notebook.render.PagePreviewView
 import com.weave.notebook.ui.NativeUi.dp
 
 class LibraryActivity: AppCompatActivity() {
+    private var libraryReady=false
     private lateinit var grid: GridLayout
     private lateinit var status: TextView
     private lateinit var recent:TextView
@@ -44,7 +46,11 @@ class LibraryActivity: AppCompatActivity() {
         }
     }
     override fun onCreate(state:Bundle?) {
+        val splash=installSplashScreen()
+        splash.setKeepOnScreenCondition { !libraryReady }
         super.onCreate(state)
+        com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
+        NativeUi.applyTheme(this)
         backupId=state?.getString("backupId")
         window.statusBarColor=NativeUi.BG;window.navigationBarColor=NativeUi.BG
         val root=NativeUi.column(this).apply { setBackgroundColor(NativeUi.BG);setPadding(dp(28),dp(16),dp(28),dp(12)) }
@@ -52,7 +58,10 @@ class LibraryActivity: AppCompatActivity() {
         val brand=NativeUi.column(this)
         brand.addView(NativeUi.text(this,"Weave",32f,true))
         brand.addView(NativeUi.text(this,"Connecting ideas together",15f).apply {setTextColor(NativeUi.MUTED)})
-        head.addView(brand,LinearLayout.LayoutParams(0,-2,1f))
+        val identity=NativeUi.row(this)
+        identity.addView(ImageView(this).apply {setImageResource(com.weave.notebook.R.drawable.weave_owl);scaleType=ImageView.ScaleType.FIT_CENTER;contentDescription="Weave owl"},LinearLayout.LayoutParams(dp(44),dp(52)).apply {rightMargin=dp(12)})
+        identity.addView(brand)
+        head.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
         head.addView(NativeUi.button(this,"Restore") {restore.launch(arrayOf("application/octet-stream","application/zip","*/*"))})
         head.addView(NativeUi.button(this,"＋ New note",true) {newNote()})
         root.addView(head)
@@ -67,7 +76,7 @@ class LibraryActivity: AppCompatActivity() {
     override fun onSaveInstanceState(out:Bundle) {super.onSaveInstanceState(out);out.putString("backupId",backupId?:backup?.id)}
     override fun onResume() {super.onResume();refresh()}
     private fun refresh() {
-        NotebookIO.submit({NotebookIO.database.list()}) {r->r.onSuccess { docs=it;render() }.onFailure {error(it)} }
+        NotebookIO.submit({NotebookIO.database.list()}) {r->libraryReady=true;r.onSuccess { docs=it;render() }.onFailure {error(it)} }
     }
     private fun render() {
         grid.removeAllViews();recent.visibility=if(docs.isEmpty())View.GONE else View.VISIBLE
@@ -76,7 +85,7 @@ class LibraryActivity: AppCompatActivity() {
         val cardWidth=(resources.displayMetrics.widthPixels-dp(56))/columns
         docs.forEach {note->
             val card=NativeUi.column(this).apply {
-                background=NativeUi.rounded(Color.WHITE,dp(14).toFloat(),NativeUi.LINE)
+                background=NativeUi.rounded(NativeUi.SURFACE,dp(14).toFloat(),NativeUi.LINE)
                 setPadding(dp(14),dp(14),dp(14),dp(12));elevation=dp(1).toFloat()
                 contentDescription="${note.title}, ${note.pages.size} pages";setOnClickListener {open(note)}
             }

@@ -18,7 +18,7 @@ analytics, cloud, OCR, or network permission.
 | minSdk | 29 (Android 10) |
 | Build-Tools | 34.0.0 |
 
-Version 0.2.0-tablet (versionCode 2).
+Version 0.3.0-editor (versionCode 3).
 
 ## Build commands
 
@@ -46,9 +46,10 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## PR stack
 
-Milestones 1–24 are merged. Milestone 25 completes the native tablet flows on
-`milestone/25-tablet-completion`. Merge order: after 24. Do not merge without the
-owner’s explicit instruction; preserve the historical milestone commits.
+Milestones 1–24 are merged. Milestone 25 connects notebook flows; milestone 26
+adds gesture navigation, fullscreen palettes, the owl identity and system colors.
+Merge order: 25, then 26. Do not merge without the owner’s explicit instruction;
+preserve historical milestone commits.
 
 ## CI
 
@@ -57,7 +58,8 @@ pull requests targeting `main` or any `milestone/**` base branch.
 
 ## Review handoff
 
-See [tablet completion](docs/TABLET_COMPLETION.md) for current behavior and measured
+See [editor and theme](docs/EDITOR_GESTURES_AND_THEME.md) and
+[tablet completion](docs/TABLET_COMPLETION.md) for current behavior and measured
 device checks. Historical milestone evidence remains in `docs/REVIEW_INDEX.md`.
 Use the library’s Backup action for editable `.weave` archives and Restore to
 import a separate copy. PDF export is for reading and sharing, not editing.
