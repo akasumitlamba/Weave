@@ -7,7 +7,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.*
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import com.weave.notebook.data.*
 import com.weave.notebook.ink.InkCanvasView
@@ -37,6 +37,8 @@ class EditorActivity: AppCompatActivity() {
     private lateinit var redo:Button
     private val prefs by lazy {getSharedPreferences("writing",0)}
     private var tool=ToolKind.PEN
+    private var pagesExpanded=false
+    private lateinit var pageScroll:ScrollView
     private var fullscreen=false
     private var brush=BrushKind.PEN
     private var color=Color.BLACK
@@ -62,6 +64,7 @@ class EditorActivity: AppCompatActivity() {
         tool=runCatching {ToolKind.valueOf(prefs.getString("tool","PEN")!!)}.getOrDefault(ToolKind.PEN)
         if(tool==ToolKind.HAND)tool=ToolKind.PEN
         fullscreen=state?.getBoolean("fullscreen")?:false
+        pagesExpanded=state?.getBoolean("pagesExpanded")?:false
         shapes=prefs.getBoolean("shapes",false)
         smoothing=runCatching {SmoothingLevel.valueOf(prefs.getString("smoothing","LOW")!!)}.getOrDefault(SmoothingLevel.LOW)
         stripVisible=state?.getBoolean("strip")?:false;stripLeft=state?.getFloat("stripLeft")?:15f;stripTop=state?.getFloat("stripTop")?:40f
@@ -74,7 +77,7 @@ class EditorActivity: AppCompatActivity() {
                 session=Session(doc,(state?.getInt("page")?:prefs.getInt("page.$id",0)).coerceIn(doc.pages.indices))
                 if(state!=null) {session.zoom=state.getFloat("zoom",1f);session.panX=state.getFloat("panX");session.panY=state.getFloat("panY")}
                 loading=false;build()
-            }.onFailure {AlertDialog.Builder(this).setTitle("Could not open notebook").setMessage(it.message).setPositiveButton("Back") {_,_->finish()}.show()}
+            }.onFailure {MaterialAlertDialogBuilder(this).setTitle("Could not open notebook").setMessage(it.message).setPositiveButton("Back") {_,_->finish()}.show()}
         }
     }
     override fun onRetainCustomNonConfigurationInstance():Any? {rememberViewport();return if(loading) null else session}
@@ -82,67 +85,49 @@ class EditorActivity: AppCompatActivity() {
         super.onSaveInstanceState(out);if(loading)return
         rememberViewport();out.putString("noteId",session.note.id);out.putInt("page",session.index)
         out.putFloat("zoom",session.zoom);out.putFloat("panX",session.panX);out.putFloat("panY",session.panY)
-        out.putBoolean("fullscreen",fullscreen);out.putBoolean("strip",stripVisible);out.putFloat("stripLeft",stripLeft);out.putFloat("stripTop",stripTop)
+        out.putBoolean("pagesExpanded",pagesExpanded);out.putBoolean("fullscreen",fullscreen);out.putBoolean("strip",stripVisible);out.putFloat("stripLeft",stripLeft);out.putFloat("stripTop",stripTop)
     }
     override fun onPause() {if(!loading) {canvas.cancelWork();strip.cancelWork();rememberViewport();saveGuard()};super.onPause()}
     private fun rememberViewport() {if(!loading && ::canvas.isInitialized) {session.zoom=canvas.viewport.zoom;session.panX=canvas.viewport.panXPx;session.panY=canvas.viewport.panYPx}}
     private fun build() {
-        window.attributes=window.attributes.apply {layoutInDisplayCutoutMode=if(fullscreen)android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES else android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT}
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window,!fullscreen)
+        // Always consume system/cutout insets, including transient bars in fullscreen.
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window,false)
         androidx.core.view.WindowInsetsControllerCompat(window,window.decorView).apply {
             systemBarsBehavior=androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             if(fullscreen)hide(androidx.core.view.WindowInsetsCompat.Type.systemBars()) else show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
         }
         root=NativeUi.column(this).apply {setBackgroundColor(NativeUi.BG)}
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) {v,insets->
+            val bars=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(bars.left,bars.top,bars.right,bars.bottom);insets
+        }
         val landscape=resources.configuration.screenWidthDp>resources.configuration.screenHeightDp
-        val header=NativeUi.row(this).apply {setPadding(dp(10),dp(3),dp(10),dp(3))}
-        header.addView(NativeUi.button(this,"‹ Back") {leave()})
-        header.addView(NativeUi.text(this,session.note.title,20f,true).apply {maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(dp(10),0,dp(8),0)},LinearLayout.LayoutParams(0,-2,1f))
-        status=NativeUi.text(this,"Saved",13f).apply {setPadding(dp(8),0,dp(8),0);setOnClickListener {save()};contentDescription="Save status. Tap to retry a failed save"}
+        val header=NativeUi.row(this).apply {setPadding(dp(4),0,dp(4),0)}
+        header.addView(sideAction("‹ Back") {leave()})
+        header.addView(NativeUi.text(this,session.note.title,17f,true).apply {maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(dp(8),0,dp(8),0)},LinearLayout.LayoutParams(0,-2,1f))
+        status=NativeUi.text(this,"Saved",11f).apply {setPadding(dp(6),0,dp(6),0);setOnClickListener {save()};contentDescription="Save status. Tap to retry a failed save"}
         header.addView(status)
-        val actions=NativeUi.row(this).apply {setPadding(dp(8),0,dp(8),0)}
-        undo=NativeUi.button(this,"↶ Undo") {undo()};redo=NativeUi.button(this,"↷ Redo") {redo()}
-        actions.addView(undo);actions.addView(redo)
-        actions.addView(NativeUi.button(this,"Pages") {pageDialog()})
-        actions.addView(NativeUi.button(this,"Export PDF") {exportAfterSave=true;save()})
-
-        header.addView(NativeUi.button(this,"⋮") {moreOptions()})
-        if(!fullscreen) {
-            if(landscape) {header.addView(actions);root.addView(header)} else {root.addView(header);root.addView(actions)}
-        }
-        tools=NativeUi.row(this).apply {setPadding(dp(2),dp(4),dp(2),0)}
-        options=NativeUi.row(this).apply {setPadding(dp(2),0,dp(2),dp(4))}
-        if(fullscreen) {tools.orientation=LinearLayout.VERTICAL;options.orientation=LinearLayout.HORIZONTAL;options.gravity=Gravity.TOP}
-        else {
-            val combined=NativeUi.row(this);combined.addView(tools)
-            if(landscape)combined.addView(options)
-            combined.addView(Switch(this).apply {text="Hold shapes";isChecked=shapes;minHeight=dp(48);setPadding(dp(12),0,dp(8),0)
-                setOnCheckedChangeListener {_,checked->shapes=checked;prefs.edit().putBoolean("shapes",checked).apply();applyTool()}})
-            root.addView(NativeUi.scrollRow(this,combined))
-            if(!landscape)root.addView(NativeUi.scrollRow(this,options))
-        }
-        val workspace=NativeUi.row(this)
-        pageRail=NativeUi.column(this).apply {setPadding(dp(8),dp(8),dp(8),0)}
-        if(landscape && !fullscreen) workspace.addView(ScrollView(this).apply {addView(pageRail)},LinearLayout.LayoutParams(dp(108),-1))
-        if(fullscreen) {
-            val left=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(4),dp(8),dp(4),dp(8));setBackgroundColor(NativeUi.BG)}
-            left.addView(sideAction("Exit fullscreen") {toggleFullscreen()})
-            left.addView(tools);left.addView(View(this),LinearLayout.LayoutParams(1,0,1f))
-            listOf(undo,redo).forEach {button->actions.removeView(button);compact(button);left.addView(button)}
-            workspace.addView(left,LinearLayout.LayoutParams(dp(68),-1))
-        }
+        header.addView(sideAction(if(fullscreen)"Exit fullscreen" else "Fullscreen") {toggleFullscreen()})
+        header.addView(sideAction("⋮") {moreOptions()})
+        root.addView(header)
+        val workspace=NativeUi.row(this).apply {gravity=Gravity.TOP}
+        val left=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL;setBackgroundColor(NativeUi.SURFACE)}
+        undo=sideAction("↶ Undo") {undo()};redo=sideAction("↷ Redo") {redo()}
+        left.addView(undo);left.addView(redo)
+        left.addView(sideAction("Pages") {pagesExpanded=!pagesExpanded;pageScroll.visibility=if(pagesExpanded)View.VISIBLE else View.GONE})
+        pageLabel=NativeUi.text(this,"",11f).apply {gravity=Gravity.CENTER;setPadding(0,dp(2),0,dp(8))}
+        left.addView(pageLabel)
+        workspace.addView(left,LinearLayout.LayoutParams(dp(48),-1))
+        pageRail=NativeUi.column(this).apply {setPadding(dp(6),dp(6),dp(6),dp(6))}
+        pageScroll=ScrollView(this).apply {addView(pageRail);setBackgroundColor(NativeUi.SURFACE);visibility=if(pagesExpanded)View.VISIBLE else View.GONE}
+        workspace.addView(pageScroll,LinearLayout.LayoutParams(dp(100),-1))
         canvas=InkCanvasView(this)
         workspace.addView(canvas,LinearLayout.LayoutParams(0,-1,1f))
-        if(fullscreen) {
-            val right=NativeUi.column(this).apply {setPadding(dp(4),dp(8),dp(4),dp(8));gravity=Gravity.CENTER_HORIZONTAL;setBackgroundColor(NativeUi.BG)}
-            right.addView(ScrollView(this).apply {addView(options)},LinearLayout.LayoutParams(-1,0,1f))
-            val lower=NativeUi.row(this)
-            lower.addView(sideAction("Fit") {canvas.cancelWork();canvas.viewport.fitPage();viewChanged()})
-            lower.addView(sideAction("Pages") {pageDialog()});right.addView(lower)
-            right.addView(sideAction("⋮") {moreOptions()})
-            (status.parent as? android.view.ViewGroup)?.removeView(status);status.textSize=11f;right.addView(status)
-            workspace.addView(right,LinearLayout.LayoutParams(dp(108),-1))
-        }
+        tools=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL}
+        options=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL}
+        val right=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(6),0,dp(6));setBackgroundColor(NativeUi.SURFACE)}
+        right.addView(tools);right.addView(View(this),LinearLayout.LayoutParams(-1,dp(12)));right.addView(options)
+        workspace.addView(ScrollView(this).apply {isVerticalScrollBarEnabled=false;addView(right)},LinearLayout.LayoutParams(dp(64),-1))
         root.addView(workspace,LinearLayout.LayoutParams(-1,0,1f))
         stripBox=NativeUi.column(this).apply {background=NativeUi.rounded(NativeUi.SURFACE);visibility=if(stripVisible) View.VISIBLE else View.GONE}
         val stripActions=NativeUi.row(this)
@@ -159,13 +144,8 @@ class EditorActivity: AppCompatActivity() {
         strip=InkCanvasView(this)
         stripBox.addView(strip,LinearLayout.LayoutParams(-1,dp(if(landscape) 150 else 200)))
         if(!fullscreen)root.addView(stripBox)
-        val bottom=NativeUi.row(this).apply {setPadding(dp(6),dp(3),dp(6),dp(3))}
-        pageLabel=NativeUi.text(this,"",14f).apply {minHeight=dp(48);gravity=Gravity.CENTER;setPadding(dp(6),0,dp(6),0);setOnClickListener {pageDialog()};contentDescription="Current page. Tap to change pages"};bottom.addView(pageLabel)
-        bottom.addView(NativeUi.spacer(this))
-        bottom.addView(NativeUi.button(this,"Fit") {canvas.cancelWork();canvas.viewport.fitPage();viewChanged()}.apply {setOnLongClickListener {canvas.cancelWork();canvas.viewport.fitWidth();viewChanged();true}})
-        bottom.addView(NativeUi.button(this,"Fullscreen") {toggleFullscreen()})
-        if(!fullscreen)root.addView(bottom)
         setContentView(root)
+        androidx.core.view.ViewCompat.requestApplyInsets(root)
         canvas.onViewport={viewChanged()}
         listOf(canvas,strip).forEach {v->
             v.onStroke={raw,fitted->
@@ -177,7 +157,7 @@ class EditorActivity: AppCompatActivity() {
             v.onShapeStatus={recognized->if(recognized)status.text="Shape recognized" else updateStatus()}
         }
         val guardEdge=runCatching {GuardEdge.valueOf(prefs.getString("guardEdge","BOTTOM")!!)}.getOrDefault(GuardEdge.BOTTOM)
-        listOf(canvas,strip).forEach {v->v.palmGuards.guard=v.palmGuards.guard.copy(enabled=prefs.getBoolean("guard",false),edge=guardEdge,locked=prefs.getBoolean("guardLock",false),sizePx=prefs.getFloat(if(v==strip)"stripGuardSize" else "guardSize",dp(if(v==strip)40 else 90).toFloat()))}
+        listOf(canvas,strip).forEach {v->v.palmGuards.guard=v.palmGuards.guard.copy(enabled=false,edge=guardEdge,locked=prefs.getBoolean("guardLock",false),sizePx=prefs.getFloat(if(v==strip)"stripGuardSize" else "guardSize",dp(if(v==strip)40 else 90).toFloat()))}
         canvas.post {canvas.viewport.restore(session.zoom,session.panX,session.panY);viewChanged();updateStrip()}
         session.observer={if(!isDestroyed)updateStatus()}
         renderTools();renderPage();updateStatus()
@@ -188,25 +168,30 @@ class EditorActivity: AppCompatActivity() {
         tools.removeAllViews()
         ToolKind.entries.filter {it!=ToolKind.HAND}.forEach { t->
             val label=when(t) {ToolKind.PEN->"Pen";ToolKind.MARKER->"Marker";ToolKind.HIGHLIGHTER->"Highlighter";ToolKind.ERASER->"Eraser";ToolKind.HAND->"Hand"}
-            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {if(fullscreen)layoutParams=LinearLayout.LayoutParams(dp(56),dp(66));setOnLongClickListener {selectTool(t);toolOptions();true}})
+            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {text="";compoundDrawablePadding=0;layoutParams=LinearLayout.LayoutParams(dp(56),dp(58));setOnLongClickListener {selectTool(t);toolOptions();true}})
         }
         brush=when(tool) {ToolKind.MARKER->BrushKind.MARKER;ToolKind.HIGHLIGHTER->BrushKind.HIGHLIGHTER;ToolKind.ERASER->BrushKind.ERASER;else->BrushKind.PEN}
         strokeWidth=prefs.getFloat("width.$brush",BrushCatalog.defaultWidth(brush))
         color=prefs.getInt("color.$brush",BrushCatalog.colorsFor(brush).first())
         options.removeAllViews()
-        val widths=BrushCatalog.widthsFor(brush)
-        val widthGroup=if(fullscreen)NativeUi.column(this) else NativeUi.row(this)
-        val colorGroup=if(fullscreen)NativeUi.column(this) else NativeUi.row(this)
-        widthGroup.addView(NativeUi.text(this,"mm",11f).apply {gravity=Gravity.CENTER;setTextColor(NativeUi.MUTED);setPadding(dp(6),dp(4),dp(6),dp(4));contentDescription="Stroke width in millimetres"})
-        widths.forEach {w->widthGroup.addView(NativeUi.width(this,w,w==strokeWidth,w==BrushCatalog.defaultWidth(brush),widths.last()) {prefs.edit().putFloat("width.$brush",w).apply();renderTools()})}
-        options.addView(widthGroup)
-        if(brush!=BrushKind.ERASER) {
-            colorGroup.addView(NativeUi.text(this,"Color",11f).apply {gravity=Gravity.CENTER;setTextColor(NativeUi.MUTED);setPadding(dp(8),dp(4),dp(4),dp(4))})
-            val colors=BrushCatalog.colorsFor(brush)
-            val names=if(brush==BrushKind.HIGHLIGHTER)listOf("Yellow","Pink","Green") else listOf("Black","Blue","Red","Green")
-            colors.forEachIndexed {i,c->colorGroup.addView(NativeUi.dot(this,names[i],c,9,c==color) {prefs.edit().putInt("color.$brush",c).apply();renderTools()})}
-            options.addView(colorGroup)
-        }
+        options.addView(NativeUi.button(this,"${formatWidth(strokeWidth)} ▾") {toolOptions()}.apply {
+            contentDescription="Thickness, ${formatWidth(strokeWidth)} millimetres";textSize=12f;setPadding(0,0,0,0)
+            layoutParams=LinearLayout.LayoutParams(dp(58),dp(48));tooltipText="Thickness"
+        })
+        if(brush!=BrushKind.ERASER) options.addView(NativeUi.button(this,"▾") {colorOptions()}.apply {
+            contentDescription="Ink color";textSize=14f;setPadding(dp(8),0,dp(4),0)
+            val chip=object:android.graphics.drawable.Drawable() {
+                val p=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                override fun draw(c:android.graphics.Canvas) {
+                    p.style=android.graphics.Paint.Style.FILL;p.color=color or Color.BLACK;c.drawCircle(bounds.exactCenterX(),bounds.exactCenterY(),dp(8).toFloat(),p)
+                    p.style=android.graphics.Paint.Style.STROKE;p.strokeWidth=dp(1).toFloat();p.color=NativeUi.MUTED;c.drawCircle(bounds.exactCenterX(),bounds.exactCenterY(),dp(8).toFloat(),p)
+                }
+                override fun setAlpha(a:Int){};override fun setColorFilter(f:android.graphics.ColorFilter?){}
+                @Deprecated("Deprecated in Android") override fun getOpacity()=android.graphics.PixelFormat.TRANSLUCENT
+            }.apply {setBounds(0,0,dp(24),dp(24))}
+            setCompoundDrawables(chip,null,null,null);compoundDrawablePadding=0
+            layoutParams=LinearLayout.LayoutParams(dp(58),dp(48));tooltipText="Ink color"
+        })
         applyTool()
     }
     private fun applyTool() {
@@ -226,12 +211,12 @@ class EditorActivity: AppCompatActivity() {
     private fun renderRail() {
         pageRail.removeAllViews()
         session.note.pages.forEachIndexed {i,p->
-            val holder=NativeUi.column(this).apply {setPadding(dp(4),dp(4),dp(4),dp(4));background=NativeUi.rounded(if(i==session.index)NativeUi.SELECTED else Color.TRANSPARENT)}
+            val holder=NativeUi.column(this).apply {setPadding(dp(4),dp(4),dp(4),dp(4));background=NativeUi.rounded(if(i==session.index)NativeUi.SELECTED else NativeUi.SURFACE,dp(8).toFloat(),if(i==session.index)NativeUi.TEAL else NativeUi.LINE);setOnClickListener {switchPage(i)};setOnLongClickListener {pageMenu(i);true}}
             holder.addView(PagePreviewView(this).apply {page=p.spec;strokes=p.strokes;contentDescription="Page ${i+1}";setOnClickListener {switchPage(i)};setOnLongClickListener {pageMenu(i);true}},LinearLayout.LayoutParams(dp(76),dp(108)))
-            holder.addView(NativeUi.text(this,"${i+1}",13f).apply {gravity=Gravity.CENTER})
-            pageRail.addView(holder)
+            holder.addView(NativeUi.text(this,"Page ${i+1}",11f).apply {gravity=Gravity.CENTER})
+            pageRail.addView(holder,LinearLayout.LayoutParams(-1,-2).apply {bottomMargin=dp(8)})
         }
-        pageRail.addView(NativeUi.tool(this,"Add page",false) {addPage()}.apply {layoutParams=LinearLayout.LayoutParams(-1,dp(70))})
+        pageRail.addView(sideAction("＋ Page") {addPage()})
     }
     private fun changePage(page:NotebookPage) {edit(session.note.copy(pages=session.note.pages.toMutableList().also {it[session.index]=page}))}
     private fun edit(next:NotebookDocument) {session.history.record(session.note);session.note=next.copy(modified=System.currentTimeMillis());renderPage();save()}
@@ -258,26 +243,33 @@ class EditorActivity: AppCompatActivity() {
     private fun addPage() {val p=NotebookPage(PageSpec(UUID.randomUUID().toString(),current().spec.paperType,current().spec.ruleSpacingMm));session.index=session.note.pages.size;edit(session.note.copy(pages=session.note.pages+p))}
     private fun pageDialog() {
         val items=session.note.pages.mapIndexed {i,p->"Page ${i+1}  ·  ${if(p.spec.paperType==PaperType.RULED) "Lined" else "Plain"}"}.toTypedArray()
-        AlertDialog.Builder(this).setTitle("Pages · tap to open").setItems(items) {_,i->switchPage(i);pageMenu(i)}.setPositiveButton("＋ Add page") {_,_->addPage()}.setNegativeButton("Close",null).show()
+        MaterialAlertDialogBuilder(this).setTitle("Pages · tap to open").setItems(items) {_,i->switchPage(i);pageMenu(i)}.setPositiveButton("＋ Add page") {_,_->addPage()}.setNegativeButton("Close",null).show()
     }
     private fun pageMenu(index:Int) {
         switchPage(index)
-        AlertDialog.Builder(this).setTitle("Page ${index+1}").setItems(arrayOf("Write on this page","Change paper","Duplicate page","Move earlier","Move later","Delete page")) {_,which->
+        MaterialAlertDialogBuilder(this).setTitle("Page ${index+1}").setItems(arrayOf("Write on this page","Change paper","Duplicate page","Move earlier","Move later","Delete page")) {_,which->
             when(which) {
                 1->paperDialog()
                 2->{val p=current();val id=UUID.randomUUID().toString();val copy=NotebookPage(p.spec.copy(pageId=id),p.strokes.map {it.copy(strokeId=UUID.randomUUID().toString(),pageId=id)})
                     val pages=session.note.pages.toMutableList();pages.add(index+1,copy);session.index=index+1;edit(session.note.copy(pages=pages))}
                 3,4->{val to=index+if(which==3)-1 else 1;if(to in session.note.pages.indices) {val pages=session.note.pages.toMutableList();val p=pages.removeAt(index);pages.add(to,p);session.index=to;edit(session.note.copy(pages=pages))}}
-                5->if(session.note.pages.size>1) AlertDialog.Builder(this).setTitle("Delete page ${index+1}?").setMessage("Undo can restore this page while the editor stays open.").setNegativeButton("Cancel",null).setPositiveButton("Delete") {_,_->val pages=session.note.pages.toMutableList();pages.removeAt(index);session.index=minOf(index,pages.lastIndex);edit(session.note.copy(pages=pages))}.show()
+                5->if(session.note.pages.size>1) MaterialAlertDialogBuilder(this).setTitle("Delete page ${index+1}?").setMessage("Undo can restore this page while the editor stays open.").setNegativeButton("Cancel",null).setPositiveButton("Delete") {_,_->val pages=session.note.pages.toMutableList();pages.removeAt(index);session.index=minOf(index,pages.lastIndex);edit(session.note.copy(pages=pages))}.show()
                     else Toast.makeText(this,"Keep at least one page in a notebook",Toast.LENGTH_SHORT).show()
             }
         }.show()
     }
     private fun paperDialog() {
         canvas.cancelWork();strip.cancelWork()
-        AlertDialog.Builder(this).setTitle("A4 paper · 210 × 297 mm").setItems(arrayOf("Plain","Lined · 6 mm","Lined · 8 mm","Lined · 10 mm")) {_,i->
-            changePage(current().copy(spec=current().spec.copy(paperType=if(i==0)PaperType.PLAIN else PaperType.RULED,ruleSpacingMm=when(i){1->6f;3->10f;else->8f})))
-        }.show()
+        val content=NativeUi.column(this).apply {setPadding(dp(16),dp(8),dp(16),dp(16))}
+        val dialog=MaterialAlertDialogBuilder(this).setTitle("Paper").setView(content).setNegativeButton("Cancel",null).create()
+        listOf("Plain","Lined · 6 mm","Lined · 8 mm","Lined · 10 mm").forEachIndexed {i,label->
+            val row=NativeUi.row(this).apply {setPadding(dp(8),dp(8),dp(8),dp(8));background=NativeUi.rounded(NativeUi.SURFACE)}
+            row.addView(PagePreviewView(this).apply {page=current().spec.copy(paperType=if(i==0)PaperType.PLAIN else PaperType.RULED,ruleSpacingMm=when(i){1->6f;3->10f;else->8f})},LinearLayout.LayoutParams(dp(48),dp(66)))
+            row.addView(NativeUi.text(this,label,16f).apply {setPadding(dp(20),0,0,0)})
+            row.contentDescription=label;row.setOnClickListener {
+                changePage(current().copy(spec=current().spec.copy(paperType=if(i==0)PaperType.PLAIN else PaperType.RULED,ruleSpacingMm=when(i){1->6f;3->10f;else->8f})));dialog.dismiss()
+            };content.addView(row,LinearLayout.LayoutParams(-1,dp(82)).apply {bottomMargin=dp(6)})
+        };dialog.show()
     }
     private fun viewChanged() {canvas.invalidate();rememberViewport()}
     private fun compact(button:Button):Button = button.apply {text="";compoundDrawablePadding=0;setPadding(dp(12),0,dp(12),0);layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
@@ -297,7 +289,7 @@ class EditorActivity: AppCompatActivity() {
     }
     private fun guardDialog() {
         canvas.cancelWork();strip.cancelWork()
-        AlertDialog.Builder(this).setTitle("Palm guard").setItems(arrayOf("Off","Bottom","Left handed · left edge","Right handed · right edge","Lock / unlock size","Writing window · centre","Clear writing window")) {_,i->
+        MaterialAlertDialogBuilder(this).setTitle("Palm guard").setItems(arrayOf("Off","Bottom","Left handed · left edge","Right handed · right edge","Lock / unlock size","Writing window · centre","Clear writing window")) {_,i->
             listOf(canvas,strip).forEach {v->
                 val g=v.palmGuards
                 when(i) {
@@ -311,22 +303,59 @@ class EditorActivity: AppCompatActivity() {
         }.show()
     }
     private fun moreOptions() {
-        val choices=if(fullscreen)arrayOf("Palm guard / writing window","Change paper","Smoothing","All tool widths")
-            else arrayOf("${if(shapes) "✓ " else ""}Hold shapes","Zoom writing","Palm guard / writing window","Change paper","Smoothing","All tool widths")
-        AlertDialog.Builder(this).setTitle("Writing options").setItems(choices) {_,i->
-            val action=if(fullscreen)i+2 else i
-            when(action) {0->{shapes=!shapes;prefs.edit().putBoolean("shapes",shapes).apply();applyTool()};1->toggleStrip();2->guardDialog();3->paperDialog();4->settings();5->toolOptions()}
-        }.show()
+        val content=NativeUi.column(this).apply {setPadding(dp(16),dp(8),dp(16),dp(16))}
+        val dialog=MaterialAlertDialogBuilder(this).setTitle("Notebook").setView(content).setNegativeButton("Close",null).create()
+        fun item(label:String,action:()->Unit) {content.addView(NativeUi.button(this,label) {dialog.dismiss();action()}.apply {gravity=Gravity.CENTER_VERTICAL;layoutParams=LinearLayout.LayoutParams(-1,dp(52)).apply {bottomMargin=dp(6)}})}
+        item("Paper") {paperDialog()}
+        item("Export PDF") {exportAfterSave=true;save()}
+        item("Page actions") {pageMenu(session.index)}
+        item("Fit page") {canvas.cancelWork();canvas.viewport.fitPage();viewChanged()}
+        if(!fullscreen)content.addView(com.google.android.material.materialswitch.MaterialSwitch(this).apply {
+            text="Hold to straighten shapes";setTextColor(NativeUi.TEXT);isChecked=shapes;minHeight=dp(52)
+            setOnCheckedChangeListener {_,checked->shapes=checked;prefs.edit().putBoolean("shapes",checked).apply();applyTool()}
+        })
+        item("Stroke smoothing") {settings()}
+        dialog.show()
     }
+    private fun formatWidth(value:Float)=if(value==value.toInt().toFloat())value.toInt().toString() else value.toString()
     private fun toolOptions() {
-        if(tool==ToolKind.HAND)return
-        val widths=BrushCatalog.widthsFor(brush)
-        AlertDialog.Builder(this).setTitle("${tool.name.lowercase().replaceFirstChar {it.uppercase()}} width")
-            .setSingleChoiceItems(widths.map {"$it mm"}.toTypedArray(),widths.indexOfFirst {it==strokeWidth}) {dialog,i->prefs.edit().putFloat("width.$brush",widths[i]).apply();renderTools();dialog.dismiss()}.setNegativeButton("Close",null).show()
+        canvas.cancelWork();strip.cancelWork()
+        val content=NativeUi.column(this).apply {setPadding(dp(16),dp(8),dp(16),dp(16))}
+        val dialog=palette("Thickness · mm",content)
+        BrushCatalog.widthsFor(brush).forEach {w->
+            val row=NativeUi.row(this).apply {background=NativeUi.rounded(if(w==strokeWidth)NativeUi.SELECTED else NativeUi.SURFACE);setPadding(dp(12),0,dp(12),0)}
+            row.addView(object:View(this) {
+                val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {color=NativeUi.TEXT;strokeCap=android.graphics.Paint.Cap.ROUND;strokeWidth=(1f+10f*w/12f)*resources.displayMetrics.density}
+                override fun onDraw(c:android.graphics.Canvas) {c.drawLine(dp(8).toFloat(),height/2f,width-dp(20).toFloat(),height/2f,paint)}
+            },LinearLayout.LayoutParams(dp(84),dp(48)))
+            row.addView(NativeUi.text(this,"${formatWidth(w)} mm${if(w==BrushCatalog.defaultWidth(brush))" · Default" else ""}",15f))
+            row.contentDescription="Width ${formatWidth(w)} mm";row.isSelected=w==strokeWidth
+            row.setOnClickListener {prefs.edit().putFloat("width.$brush",w).apply();renderTools();dialog.dismiss()}
+            content.addView(row,LinearLayout.LayoutParams(-1,dp(52)).apply {bottomMargin=dp(4)})
+        };dialog.showAsDropDown(options,dp(58)-dp(260),0,Gravity.START)
+    }
+    private fun colorOptions() {
+        canvas.cancelWork();strip.cancelWork()
+        val colors=BrushCatalog.colorsFor(brush)
+        val names=if(brush==BrushKind.HIGHLIGHTER)listOf("Yellow","Pink","Green") else listOf("Black","Blue","Red","Green")
+        val row=NativeUi.row(this).apply {gravity=Gravity.CENTER;setPadding(dp(16),dp(16),dp(16),dp(16))}
+        val dialog=palette("Ink color",row)
+        colors.forEachIndexed {i,c->row.addView(NativeUi.dot(this,names[i],c,12,c==color) {prefs.edit().putInt("color.$brush",c).apply();renderTools();dialog.dismiss()})}
+        dialog.showAsDropDown(options,dp(58)-dp(260),0,Gravity.START)
+    }
+    private fun palette(title:String,content:View):PopupWindow {
+        val panel=NativeUi.column(this).apply {
+            background=NativeUi.rounded(NativeUi.SURFACE,dp(16).toFloat(),NativeUi.LINE)
+            addView(NativeUi.text(this@EditorActivity,title,14f,true).apply {setPadding(dp(20),dp(16),dp(16),dp(4))})
+            addView(content)
+        }
+        return PopupWindow(panel,dp(260),LinearLayout.LayoutParams.WRAP_CONTENT,true).apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));elevation=dp(12).toFloat();isOutsideTouchable=true
+        }
     }
     private fun settings() {
         canvas.cancelWork();strip.cancelWork()
-        AlertDialog.Builder(this).setTitle("Handwriting smoothing").setSingleChoiceItems(arrayOf("Off · raw input","Low · default","Medium"),smoothing.ordinal) {dialog,i->
+        MaterialAlertDialogBuilder(this).setTitle("Handwriting smoothing").setSingleChoiceItems(arrayOf("Off · raw input","Low · default","Medium"),smoothing.ordinal) {dialog,i->
             smoothing=SmoothingLevel.entries[i];prefs.edit().putString("smoothing",smoothing.name).apply();applyTool();dialog.dismiss()
         }.setNegativeButton("Close",null).show()
     }
