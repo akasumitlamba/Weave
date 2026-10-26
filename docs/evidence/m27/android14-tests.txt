@@ -7,7 +7,7 @@ com.weave.notebook.EditorInteractionTest:..
 com.weave.notebook.TabletFlowTest:......
 com.weave.notebook.ThemeAssetTest:...
 
-Time: 21.351
+Time: 25.823
 
 OK (12 tests)
 

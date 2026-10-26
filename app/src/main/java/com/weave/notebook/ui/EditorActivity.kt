@@ -110,24 +110,32 @@ class EditorActivity: AppCompatActivity() {
         header.addView(sideAction(if(fullscreen)"Exit fullscreen" else "Fullscreen") {toggleFullscreen()})
         header.addView(sideAction("⋮") {moreOptions()})
         root.addView(header)
-        val workspace=NativeUi.row(this).apply {gravity=Gravity.TOP}
-        val left=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL;setBackgroundColor(NativeUi.SURFACE)}
+        val workspace=FrameLayout(this)
+        canvas=InkCanvasView(this)
+        workspace.addView(canvas,FrameLayout.LayoutParams(-1,-1))
+        val left=NativeUi.column(this).apply {
+            gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(4),0,dp(4))
+            background=NativeUi.rounded(NativeUi.SURFACE,dp(18).toFloat(),NativeUi.LINE);elevation=dp(3).toFloat()
+        }
         undo=sideAction("↶ Undo") {undo()};redo=sideAction("↷ Redo") {redo()}
         left.addView(undo);left.addView(redo)
         left.addView(sideAction("Pages") {pagesExpanded=!pagesExpanded;pageScroll.visibility=if(pagesExpanded)View.VISIBLE else View.GONE})
-        pageLabel=NativeUi.text(this,"",11f).apply {gravity=Gravity.CENTER;setPadding(0,dp(2),0,dp(8))}
+        pageLabel=NativeUi.text(this,"",10f).apply {gravity=Gravity.CENTER;setPadding(0,0,0,dp(6))}
         left.addView(pageLabel)
-        workspace.addView(left,LinearLayout.LayoutParams(dp(48),-1))
+        workspace.addView(left,FrameLayout.LayoutParams(dp(44),-2,Gravity.TOP or Gravity.START).apply {leftMargin=dp(8);topMargin=dp(12)})
         pageRail=NativeUi.column(this).apply {setPadding(dp(6),dp(6),dp(6),dp(6))}
-        pageScroll=ScrollView(this).apply {addView(pageRail);setBackgroundColor(NativeUi.SURFACE);visibility=if(pagesExpanded)View.VISIBLE else View.GONE}
-        workspace.addView(pageScroll,LinearLayout.LayoutParams(dp(100),-1))
-        canvas=InkCanvasView(this)
-        workspace.addView(canvas,LinearLayout.LayoutParams(0,-1,1f))
+        pageScroll=ScrollView(this).apply {addView(pageRail);background=NativeUi.rounded(NativeUi.SURFACE,dp(12).toFloat(),NativeUi.LINE);elevation=dp(3).toFloat();visibility=if(pagesExpanded)View.VISIBLE else View.GONE}
+        workspace.addView(pageScroll,FrameLayout.LayoutParams(dp(100),-1,Gravity.TOP or Gravity.START).apply {leftMargin=dp(58);topMargin=dp(12);bottomMargin=dp(12)})
         tools=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL}
         options=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL}
-        val right=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(6),0,dp(6));setBackgroundColor(NativeUi.SURFACE)}
-        right.addView(tools);right.addView(View(this),LinearLayout.LayoutParams(-1,dp(12)));right.addView(options)
-        workspace.addView(ScrollView(this).apply {isVerticalScrollBarEnabled=false;addView(right)},LinearLayout.LayoutParams(dp(64),-1))
+        val right=NativeUi.column(this).apply {
+            gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(2),dp(6),dp(2),dp(6))
+            background=NativeUi.rounded(NativeUi.SURFACE,dp(18).toFloat(),NativeUi.LINE);elevation=dp(3).toFloat()
+        }
+        right.addView(tools)
+        right.addView(View(this).apply {setBackgroundColor(NativeUi.LINE)},LinearLayout.LayoutParams(dp(28),dp(1)).apply {topMargin=dp(5);bottomMargin=dp(5)})
+        right.addView(options)
+        workspace.addView(ScrollView(this).apply {isVerticalScrollBarEnabled=false;clipToPadding=false;addView(right)},FrameLayout.LayoutParams(dp(48),-2,Gravity.TOP or Gravity.END).apply {rightMargin=dp(8);topMargin=dp(12);bottomMargin=dp(12)})
         root.addView(workspace,LinearLayout.LayoutParams(-1,0,1f))
         stripBox=NativeUi.column(this).apply {background=NativeUi.rounded(NativeUi.SURFACE);visibility=if(stripVisible) View.VISIBLE else View.GONE}
         val stripActions=NativeUi.row(this)
@@ -168,7 +176,7 @@ class EditorActivity: AppCompatActivity() {
         tools.removeAllViews()
         ToolKind.entries.filter {it!=ToolKind.HAND}.forEach { t->
             val label=when(t) {ToolKind.PEN->"Pen";ToolKind.MARKER->"Marker";ToolKind.HIGHLIGHTER->"Highlighter";ToolKind.ERASER->"Eraser";ToolKind.HAND->"Hand"}
-            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {text="";compoundDrawablePadding=0;layoutParams=LinearLayout.LayoutParams(dp(56),dp(58));setOnLongClickListener {selectTool(t);toolOptions();true}})
+            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {text="";compoundDrawablePadding=0;layoutParams=LinearLayout.LayoutParams(dp(44),dp(48));setOnLongClickListener {selectTool(t);toolOptions();true}})
         }
         brush=when(tool) {ToolKind.MARKER->BrushKind.MARKER;ToolKind.HIGHLIGHTER->BrushKind.HIGHLIGHTER;ToolKind.ERASER->BrushKind.ERASER;else->BrushKind.PEN}
         strokeWidth=prefs.getFloat("width.$brush",BrushCatalog.defaultWidth(brush))
@@ -176,7 +184,7 @@ class EditorActivity: AppCompatActivity() {
         options.removeAllViews()
         options.addView(NativeUi.button(this,"${formatWidth(strokeWidth)} ▾") {toolOptions()}.apply {
             contentDescription="Thickness, ${formatWidth(strokeWidth)} millimetres";textSize=12f;setPadding(0,0,0,0)
-            layoutParams=LinearLayout.LayoutParams(dp(58),dp(48));tooltipText="Thickness"
+            background=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT);layoutParams=LinearLayout.LayoutParams(dp(44),dp(44));tooltipText="Thickness"
         })
         if(brush!=BrushKind.ERASER) options.addView(NativeUi.button(this,"▾") {colorOptions()}.apply {
             contentDescription="Ink color";textSize=14f;setPadding(dp(8),0,dp(4),0)
@@ -190,7 +198,7 @@ class EditorActivity: AppCompatActivity() {
                 @Deprecated("Deprecated in Android") override fun getOpacity()=android.graphics.PixelFormat.TRANSLUCENT
             }.apply {setBounds(0,0,dp(24),dp(24))}
             setCompoundDrawables(chip,null,null,null);compoundDrawablePadding=0
-            layoutParams=LinearLayout.LayoutParams(dp(58),dp(48));tooltipText="Ink color"
+            background=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT);layoutParams=LinearLayout.LayoutParams(dp(44),dp(44));tooltipText="Ink color"
         })
         applyTool()
     }
@@ -272,7 +280,7 @@ class EditorActivity: AppCompatActivity() {
         };dialog.show()
     }
     private fun viewChanged() {canvas.invalidate();rememberViewport()}
-    private fun compact(button:Button):Button = button.apply {text="";compoundDrawablePadding=0;setPadding(dp(12),0,dp(12),0);layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
+    private fun compact(button:Button):Button = button.apply {text="";compoundDrawablePadding=0;setPadding(dp(12),0,dp(12),0);layoutParams=LinearLayout.LayoutParams(dp(44),dp(44))}
     private fun sideAction(label:String,click:()->Unit)=compact(NativeUi.button(this,label,click=click))
     private fun toggleFullscreen() {
         canvas.cancelWork();strip.cancelWork();rememberViewport();saveGuard()
@@ -332,7 +340,7 @@ class EditorActivity: AppCompatActivity() {
             row.contentDescription="Width ${formatWidth(w)} mm";row.isSelected=w==strokeWidth
             row.setOnClickListener {prefs.edit().putFloat("width.$brush",w).apply();renderTools();dialog.dismiss()}
             content.addView(row,LinearLayout.LayoutParams(-1,dp(52)).apply {bottomMargin=dp(4)})
-        };dialog.showAsDropDown(options,dp(58)-dp(260),0,Gravity.START)
+        };dialog.showAsDropDown(options,dp(44)-dp(260),0,Gravity.START)
     }
     private fun colorOptions() {
         canvas.cancelWork();strip.cancelWork()
@@ -341,7 +349,7 @@ class EditorActivity: AppCompatActivity() {
         val row=NativeUi.row(this).apply {gravity=Gravity.CENTER;setPadding(dp(16),dp(16),dp(16),dp(16))}
         val dialog=palette("Ink color",row)
         colors.forEachIndexed {i,c->row.addView(NativeUi.dot(this,names[i],c,12,c==color) {prefs.edit().putInt("color.$brush",c).apply();renderTools();dialog.dismiss()})}
-        dialog.showAsDropDown(options,dp(58)-dp(260),0,Gravity.START)
+        dialog.showAsDropDown(options,dp(44)-dp(260),0,Gravity.START)
     }
     private fun palette(title:String,content:View):PopupWindow {
         val panel=NativeUi.column(this).apply {

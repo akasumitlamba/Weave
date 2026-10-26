@@ -36,7 +36,7 @@ class DeviceAcceptanceTest {
         inst.waitForIdleSync()
     }
     private fun screenshot(name:String) {
-        inst.waitForIdleSync();Thread.sleep(150)
+        inst.waitForIdleSync();Thread.sleep(450)
         val bitmap=inst.uiAutomation.takeScreenshot();File(context.getExternalFilesDir(null),name).outputStream().use {bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
     }
     @Test fun tablet_editorUndoRedoRotationAndSavedReopen() {
@@ -112,7 +112,7 @@ class DeviceAcceptanceTest {
             val pen=all.first {it.contentDescription=="Pen"}
             val pos=IntArray(2);pen.getLocationOnScreen(pos)
             val canvasPos=IntArray(2);ink.getLocationOnScreen(canvasPos)
-            assertTrue(pos[0]>=canvasPos[0]+ink.width)
+            assertTrue(pos[0]>=canvasPos[0]+ink.width-(64*context.resources.displayMetrics.density).toInt())
             assertFalse(all.filterIsInstance<TextView>().any {it.text=="Fit" || it.text=="Fullscreen" || it.text=="Pen"})
             val bottom=canvasPos[1]+ink.height
             val navigation=androidx.core.view.ViewCompat.getRootWindowInsets(ink)!!.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
