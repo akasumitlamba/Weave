@@ -165,6 +165,37 @@ class EditorActivity : AppCompatActivity() {
             if (tool == ToolKind.HAND) chrome.setWriteMode(false) else chrome.setWriteMode(true)
             renderChrome()
         }
+        // Hold opens tool options without blocking tap selection (width cycle for ink tools).
+        button.setOnLongClickListener {
+            chrome.selectTool(tool)
+            if (tool == ToolKind.HAND) {
+                chrome.setWriteMode(false)
+                renderChrome()
+                return@setOnLongClickListener true
+            }
+            chrome.setWriteMode(true)
+            val brush = when (tool) {
+                ToolKind.MARKER -> BrushKind.MARKER
+                ToolKind.HIGHLIGHTER -> BrushKind.HIGHLIGHTER
+                ToolKind.ERASER -> BrushKind.ERASER
+                else -> BrushKind.PEN
+            }
+            if (toolSettings.brush != brush) {
+                toolSettings = toolSettings.withBrush(brush)
+            }
+            val widths = com.weave.notebook.tools.BrushCatalog.widthsFor(toolSettings.brush)
+            val idx = widths.indexOfFirst { it == toolSettings.widthMm }.let { if (it < 0) 0 else it }
+            val next = widths[(idx + 1) % widths.size]
+            toolSettings = toolSettings.copy(widthMm = next)
+            binding.inkCanvas.widthMm = toolSettings.widthMm
+            Toast.makeText(
+                this,
+                getString(R.string.tool_width_hint, toolSettings.widthMm),
+                Toast.LENGTH_SHORT
+            ).show()
+            renderChrome()
+            true
+        }
     }
 
     private fun applyUndo() {
@@ -247,14 +278,17 @@ class EditorActivity : AppCompatActivity() {
 
     private fun styleTool(button: Button, tool: ToolKind) {
         val selected = chrome.isToolSelected(tool)
-        val bg = if (selected) R.color.teal_selection else R.color.paper_white
+        button.isSelected = selected
+        // MaterialButton otherwise ignores layout android:background; force chip drawable.
+        button.backgroundTintList = null
+        button.setBackgroundResource(R.drawable.tool_chip_bg)
         val fg = if (selected) R.color.paper_white else R.color.charcoal
-        button.setBackgroundColor(ContextCompat.getColor(this, bg))
         button.setTextColor(ContextCompat.getColor(this, fg))
         button.contentDescription = getString(R.string.tool_content_desc, tool.name.lowercase())
     }
 
     private fun styleMode(button: Button, selected: Boolean) {
+        button.isSelected = selected
         val bg = if (selected) R.color.teal_selection else R.color.paper_white
         val fg = if (selected) R.color.paper_white else R.color.charcoal
         button.setBackgroundColor(ContextCompat.getColor(this, bg))

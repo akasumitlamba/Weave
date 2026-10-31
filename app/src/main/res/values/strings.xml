@@ -28,6 +28,7 @@
     <string name="tool_eraser">Eraser</string>
     <string name="tool_hand">Hand</string>
     <string name="tool_content_desc">Tool %1$s</string>
+    <string name="tool_width_hint">Width %1$.2f mm (hold tool to cycle)</string>
     <string name="save_saving">Saving</string>
     <string name="save_saved">Saved</string>
     <string name="save_failed">Save failed</string>

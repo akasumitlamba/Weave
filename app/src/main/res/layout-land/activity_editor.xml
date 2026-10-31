@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Landscape: top metadata + tools, centered A4 viewport, bottom mode/zoom. -->
+<!-- Landscape: top metadata + horizontal tool strip along the top edge (handoff UI ref). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/editorRoot"
@@ -46,7 +46,8 @@
             android:gravity="center_vertical"
             android:text="@string/save_saved"
             android:textColor="@color/charcoal"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:contentDescription="@string/save_saved" />
 
         <View
             android:layout_width="0dp"
@@ -58,7 +59,8 @@
             android:layout_width="wrap_content"
             android:layout_height="@dimen/min_touch_target"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/undo" />
+            android:text="@string/undo"
+            android:contentDescription="@string/undo" />
 
         <Button
             android:id="@+id/redoButton"
@@ -66,7 +68,8 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/redo" />
+            android:text="@string/redo"
+            android:contentDescription="@string/redo" />
 
         <Button
             android:id="@+id/pagesButton"
@@ -74,7 +77,8 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/pages" />
+            android:text="@string/pages"
+            android:contentDescription="@string/pages" />
 
         <Button
             android:id="@+id/exportButton"
@@ -82,56 +86,75 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/export" />
+            android:text="@string/export"
+            android:contentDescription="@string/export" />
     </LinearLayout>
 
+    <!-- Horizontal tool rail hugging the top edge — Pen…Hand in one row, not a vertical sidebar. -->
     <LinearLayout
+        android:id="@+id/toolRail"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@color/workspace_bg"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
-        android:paddingBottom="4dp">
+        android:paddingBottom="6dp">
 
         <Button
             android:id="@+id/toolPen"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="@dimen/min_touch_target"
+            android:layout_weight="1"
+            android:background="@drawable/tool_chip_bg"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/tool_pen" />
+            android:text="@string/tool_pen"
+            android:contentDescription="@string/tool_pen" />
 
         <Button
             android:id="@+id/toolMarker"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/tool_chip_bg"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/tool_marker" />
+            android:text="@string/tool_marker"
+            android:contentDescription="@string/tool_marker" />
 
         <Button
             android:id="@+id/toolHighlighter"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/tool_chip_bg"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/tool_highlighter" />
+            android:text="@string/tool_highlighter"
+            android:contentDescription="@string/tool_highlighter" />
 
         <Button
             android:id="@+id/toolEraser"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/tool_chip_bg"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/tool_eraser" />
+            android:text="@string/tool_eraser"
+            android:contentDescription="@string/tool_eraser" />
 
         <Button
             android:id="@+id/toolHand"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/tool_chip_bg"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/tool_hand" />
+            android:text="@string/tool_hand"
+            android:contentDescription="@string/tool_hand" />
     </LinearLayout>
 
     <com.weave.notebook.ink.InkCanvasView
@@ -142,6 +165,7 @@
         android:contentDescription="@string/a4_preview" />
 
     <LinearLayout
+        android:id="@+id/bottomRail"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
@@ -163,7 +187,8 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="12dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/zoom_out" />
+            android:text="@string/zoom_out"
+            android:contentDescription="@string/zoom_out" />
 
         <TextView
             android:id="@+id/zoomStatus"
@@ -181,7 +206,8 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/zoom_in" />
+            android:text="@string/zoom_in"
+            android:contentDescription="@string/zoom_in" />
 
         <Button
             android:id="@+id/fitButton"
@@ -189,7 +215,8 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/fit" />
+            android:text="@string/fit"
+            android:contentDescription="@string/fit" />
 
         <View
             android:layout_width="0dp"
@@ -201,7 +228,8 @@
             android:layout_width="wrap_content"
             android:layout_height="@dimen/min_touch_target"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/mode_write" />
+            android:text="@string/mode_write"
+            android:contentDescription="@string/mode_write" />
 
         <Button
             android:id="@+id/modeNavigateButton"
@@ -209,7 +237,8 @@
             android:layout_height="@dimen/min_touch_target"
             android:layout_marginStart="4dp"
             android:minWidth="@dimen/min_touch_target"
-            android:text="@string/mode_navigate" />
+            android:text="@string/mode_navigate"
+            android:contentDescription="@string/mode_navigate" />
 
         <Button
             android:id="@+id/palmGuardButton"
@@ -221,4 +250,3 @@
             android:contentDescription="@string/palm_guard_hint" />
     </LinearLayout>
 </LinearLayout>
-
