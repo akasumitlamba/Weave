@@ -11,8 +11,8 @@ android {
         applicationId = "com.weave.notebook"
         minSdk = 29
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3.0-editor"
+        versionCode = 4
+        versionName = "0.4.0-editor"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

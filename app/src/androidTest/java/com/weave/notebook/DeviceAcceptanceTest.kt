@@ -36,7 +36,7 @@ class DeviceAcceptanceTest {
         inst.waitForIdleSync()
     }
     private fun screenshot(name:String) {
-        inst.waitForIdleSync();Thread.sleep(150)
+        inst.waitForIdleSync();Thread.sleep(450)
         val bitmap=inst.uiAutomation.takeScreenshot();File(context.getExternalFilesDir(null),name).outputStream().use {bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
     }
     @Test fun tablet_editorUndoRedoRotationAndSavedReopen() {
@@ -80,11 +80,19 @@ class DeviceAcceptanceTest {
         waitFor {savedCount()==1}
         click(a,"↶ Undo");waitFor {savedCount()==0}
         click(a,"↷ Redo");waitFor {savedCount()==1}
-        fun widthCount(activity:Activity):Int {var count=0;inst.runOnMainSync {count=views(activity.window.decorView).count {it.contentDescription?.toString()?.startsWith("Width ")==true}};return count}
-        assertEquals(5,widthCount(a));click(a,"Width 0.25 mm");assertEquals(5,widthCount(a))
-        click(a,"Width 0.45 mm, default");assertEquals(5,widthCount(a))
+        fun dialogClick(label:String) {
+            var found:android.view.accessibility.AccessibilityNodeInfo?=null
+            waitFor {found=inst.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(label)?.firstOrNull {it.text?.toString()?.equals(label,true)==true};found!=null}
+            val node=found ?: error("Missing dialog item $label")
+            var target=node
+            while(!target.isClickable && target.parent!=null)target=target.parent
+            assertTrue(target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));inst.waitForIdleSync()
+        }
+        fun thickness(activity:Activity):View {var result:View?=null;inst.runOnMainSync {result=views(activity.window.decorView).first {it.contentDescription?.toString()?.startsWith("Thickness,")==true}};return result!!}
+        fun chooseWidth(activity:Activity,label:String) {val control=thickness(activity);inst.runOnMainSync {control.performClick()};inst.waitForIdleSync();if(label=="0.25 mm")screenshot("weave-thickness-menu.png");dialogClick(label)}
+        chooseWidth(a,"0.25 mm");chooseWidth(a,"0.45 mm · Default")
         inst.runOnMainSync {assertEquals(0.45f,views(a.window.decorView).filterIsInstance<InkCanvasView>().first().widthMm,0f)}
-        click(a,"Eraser");assertEquals(3,widthCount(a));click(a,"Width 2 mm");assertEquals(3,widthCount(a));click(a,"Width 8 mm");assertEquals(3,widthCount(a));click(a,"Width 4 mm, default");assertEquals(3,widthCount(a))
+        click(a,"Eraser");chooseWidth(a,"2 mm");chooseWidth(a,"8 mm");chooseWidth(a,"4 mm · Default")
         inst.runOnMainSync {
             val v=views(a.window.decorView).filterIsInstance<InkCanvasView>().first()
             fun event(action:Int,x:Float,y:Float) {val p=v.viewport.pageToScreen(x,y);val now=SystemClock.uptimeMillis();val e=MotionEvent.obtain(now,now,action,p[0],p[1],0);v.onTouchEvent(e);e.recycle()}
@@ -97,27 +105,37 @@ class DeviceAcceptanceTest {
             val now=SystemClock.uptimeMillis();val e=MotionEvent.obtain(now,now,MotionEvent.ACTION_UP,p[0],p[1],0);v.onTouchEvent(e);e.recycle()
         }
         waitFor {savedCount()==0};click(a,"↶ Undo");waitFor {savedCount()==1};click(a,"↷ Redo");waitFor {savedCount()==0};click(a,"↶ Undo");waitFor {savedCount()==1}
-        click(a,"Pen");assertEquals(5,widthCount(a))
+        click(a,"Pen")
+        inst.runOnMainSync {
+            val all=views(a.window.decorView)
+            val ink=all.filterIsInstance<InkCanvasView>().first()
+            val pen=all.first {it.contentDescription=="Pen"}
+            val pos=IntArray(2);pen.getLocationOnScreen(pos)
+            val canvasPos=IntArray(2);ink.getLocationOnScreen(canvasPos)
+            assertTrue(pos[0]>=canvasPos[0]+ink.width-(64*context.resources.displayMetrics.density).toInt())
+            assertFalse(all.filterIsInstance<TextView>().any {it.text=="Fit" || it.text=="Fullscreen" || it.text=="Pen"})
+            val bottom=canvasPos[1]+ink.height
+            val navigation=androidx.core.view.ViewCompat.getRootWindowInsets(ink)!!.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+            assertTrue(kotlin.math.abs(a.window.decorView.height-navigation.bottom-bottom)<=2)
+            val header=all.first {it.contentDescription=="Fullscreen"};header.getLocationOnScreen(pos)
+            val insets=androidx.core.view.ViewCompat.getRootWindowInsets(header)!!.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            assertTrue(pos[1]>=insets.top)
+        }
+        click(a,"Pages");screenshot("weave-pages-expanded.png");click(a,"Pages")
+        click(a,"Ink color");inst.uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("Blue").first().performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK);inst.waitForIdleSync()
         screenshot("weave-editor-landscape.png")
-        click(a,"⋮")
-        val root=inst.uiAutomation.rootInActiveWindow
-        val node=root.findAccessibilityNodeInfosByText("Zoom writing").firstOrNull()
-        assertNotNull(node);node!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-        inst.waitForIdleSync();Thread.sleep(500);screenshot("weave-strip-landscape.png")
+        click(a,"⋮");dialogClick("Paper");screenshot("weave-paper-menu.png");dialogClick("Cancel")
         // Recreate with the same note, then verify the acknowledged stroke from SQLite.
         inst.runOnMainSync {a.finish()};inst.waitForIdleSync()
         val b=inst.startActivitySync(Intent(context,EditorActivity::class.java).putExtra(EditorActivity.EXTRA_NOTE_ID,note.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         waitFor {var ready=false;inst.runOnMainSync {ready=views(b.window.decorView).filterIsInstance<InkCanvasView>().firstOrNull()?.strokes?.size==1};ready}
         val exportMonitor=inst.addMonitor(ExportActivity::class.java.name,null,false)
-        click(b,"Export PDF")
+        click(b,"⋮");dialogClick("Export PDF")
         val export=inst.waitForMonitorWithTimeout(exportMonitor,15000)?:error("Export did not open")
         inst.removeMonitor(exportMonitor)
         waitFor {var ready=false;inst.runOnMainSync {ready=views(export.window.decorView).any {it is android.widget.EditText}};ready}
         inst.waitForIdleSync();Thread.sleep(650);screenshot("weave-export-landscape.png")
         click(export,"‹ Back")
-        click(b,"⋮")
-        inst.uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText("Zoom writing").first().performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-        inst.waitForIdleSync()
         click(b,"Fullscreen");Thread.sleep(650);inst.waitForIdleSync()
         inst.runOnMainSync {
             val visible=views(b.window.decorView)
@@ -127,15 +145,14 @@ class DeviceAcceptanceTest {
             assertNull(visible.filterIsInstance<InkCanvasView>().first().sourceIndicator)
             assertFalse(visible.filterIsInstance<TextView>().any {it.text=="Zoom writing"})
         }
-        assertEquals(5,widthCount(b));screenshot("weave-fullscreen-landscape.png")
+        assertNotNull(thickness(b));screenshot("weave-fullscreen-landscape.png")
         inst.runOnMainSync {b.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_PORTRAIT}
         Thread.sleep(1500);inst.waitForIdleSync();screenshot("weave-fullscreen-portrait.png")
         var rotated:Activity?=null
         inst.runOnMainSync {rotated=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).first {it is EditorActivity}}
-        val active=rotated!!;assertEquals(5,widthCount(active));click(active,"Exit fullscreen")
-        click(active,"Close")
+        val active=rotated!!;assertNotNull(thickness(active));click(active,"Exit fullscreen")
         Thread.sleep(650);screenshot("weave-editor-portrait.png")
-        assertEquals(5,widthCount(active))
+        assertNotNull(thickness(active))
         inst.runOnMainSync {active.finish()};inst.waitForIdleSync()
         } finally {
             inst.runOnMainSync {androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filter {it is EditorActivity && it.intent.getStringExtra(EditorActivity.EXTRA_NOTE_ID)==id}.forEach {it.finish()}}

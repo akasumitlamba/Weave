@@ -77,7 +77,12 @@ object NativeUi {
     }
     fun tool(c:Context,label:String,selected:Boolean,click:()->Unit)=button(c,label,selected,click).apply {
         text=label;textSize=if(c.resources.configuration.screenWidthDp<700)9f else 10f;maxLines=1;setPadding(c.dp(1),c.dp(5),c.dp(1),c.dp(4))
-        val icon=if(label in setOf("Pen","Marker","Highlighter","Eraser")) WritingToolDrawable(label,c.dp(26)).apply {setBounds(0,0,c.dp(26),c.dp(34))}
+        val icon=if(label in setOf("Pen","Marker","Highlighter","Eraser")) androidx.core.content.ContextCompat.getDrawable(c,when(label) {
+            "Pen"->com.weave.notebook.R.drawable.writing_pen
+            "Marker"->com.weave.notebook.R.drawable.writing_marker
+            "Highlighter"->com.weave.notebook.R.drawable.writing_highlighter
+            else->com.weave.notebook.R.drawable.writing_eraser
+        })!!.mutate().apply {setBounds(0,0,c.dp(26),c.dp(36))}
             else LineIcon(label,TEXT,c.dp(25)).apply {setBounds(0,0,c.dp(25),c.dp(25))}
         setCompoundDrawables(null,icon,null,null);compoundDrawablePadding=c.dp(3)
         background=rounded(if(selected)SELECTED else Color.TRANSPARENT,c.dp(8).toFloat(),if(selected)TEAL else Color.TRANSPARENT)

@@ -30,13 +30,13 @@ class PageCanvasRenderer {
         while(bytes>32*1024*1024 && iterator.hasNext()) { bytes-=iterator.next().value.bytes; iterator.remove() }
         return outline
     }
-    fun drawPage(canvas: Canvas, viewport: ViewportTransform, page: PageSpec, strokes: List<StrokeRecord>, liveHighlighter: StrokeRecord? = null) {
+    fun drawPage(canvas: Canvas, viewport: ViewportTransform, page: PageSpec, strokes: List<StrokeRecord>, liveHighlighter: StrokeRecord? = null, minimumRulePx:Float=0f) {
         canvas.save(); canvas.concat(viewport.copyPageToScreenMatrix())
         canvas.clipRect(0f,0f,page.widthMm,page.heightMm)
         paint.style=Paint.Style.FILL; paint.color=Color.WHITE
         canvas.drawRect(0f,0f,page.widthMm,page.heightMm,paint)
         if(page.paperType==PaperType.RULED) {
-            paint.style=Paint.Style.STROKE; paint.strokeWidth=0.13f; paint.color=0xFFD7E1E6.toInt()
+            paint.style=Paint.Style.STROKE; paint.strokeWidth=maxOf(0.13f,minimumRulePx/(viewport.pageToScreen(1f,0f)[0]-viewport.pageToScreen(0f,0f)[0]).coerceAtLeast(0.001f)); paint.color=0xFFD7E1E6.toInt()
             var y=15f
             while(y<page.heightMm-7.5f) { canvas.drawLine(0f,y,page.widthMm,y,paint); y+=page.ruleSpacingMm }
             paint.color=0xFFEBC6C6.toInt(); canvas.drawLine(15f,0f,15f,page.heightMm,paint)

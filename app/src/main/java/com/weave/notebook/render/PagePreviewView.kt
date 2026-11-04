@@ -57,8 +57,8 @@ class PagePreviewView @JvmOverloads constructor(
     }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(ContextCompat.getColor(context, R.color.workspace_bg))
-        renderer.drawPage(canvas, viewport, page, strokes)
+        canvas.drawColor(com.weave.notebook.ui.NativeUi.SURFACE)
+        renderer.drawPage(canvas, viewport, page, strokes,minimumRulePx=resources.displayMetrics.density*0.5f)
         sourceIndicator?.let {r->
             val a=viewport.pageToScreen(r.left,r.top);val b=viewport.pageToScreen(r.right,r.bottom)
             val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {color=0xFF087F83.toInt();style=android.graphics.Paint.Style.STROKE;strokeWidth=2f}
