@@ -18,8 +18,7 @@ analytics, cloud, OCR, or network permission.
 | minSdk | 29 (Android 10) |
 | Build-Tools | 34.0.0 |
 
-Recorded for PR 01 bootstrap. Update this table when a later milestone intentionally
-pins a different compatible set.
+Version 0.2.0-tablet (versionCode 2).
 
 ## Build commands
 
@@ -47,9 +46,9 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## PR stack
 
-Implementation proceeds as 24 stacked dependent PRs (`milestone/01-bootstrap` …
-`milestone/24-release-handoff`). Merge in ascending order with merge commits only.
-Do not squash, rebase published branches, or combine numbered PRs.
+Milestones 1–24 are merged. Milestone 25 completes the native tablet flows on
+`milestone/25-tablet-completion`. Merge order: after 24. Do not merge without the
+owner’s explicit instruction; preserve the historical milestone commits.
 
 ## CI
 
@@ -58,6 +57,8 @@ pull requests targeting `main` or any `milestone/**` base branch.
 
 ## Review handoff
 
-See `docs/REVIEW_INDEX.md` for the 24-PR stack, merge order, simulated merge evidence,
-and device gates marked NOT RUN. Backup guide: `docs/RELEASE.md`.
+See [tablet completion](docs/TABLET_COMPLETION.md) for current behavior and measured
+device checks. Historical milestone evidence remains in `docs/REVIEW_INDEX.md`.
+Use the library’s Backup action for editable `.weave` archives and Restore to
+import a separate copy. PDF export is for reading and sharing, not editing.
 

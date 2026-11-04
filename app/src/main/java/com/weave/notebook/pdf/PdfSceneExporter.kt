@@ -25,13 +25,16 @@ class PdfSceneExporter(
 
     fun export(
         pages: List<PageSnapshot>,
-        out: OutputStream
+        out: OutputStream,
+        cancelled: () -> Boolean = { false },
+        progress: (Int) -> Unit = {}
     ): ExportResult {
         if (pages.isEmpty()) return ExportResult.Err("no pages")
         val doc = PdfDocument()
         return try {
             val renderer = PageCanvasRenderer()
             pages.forEachIndexed { index, snap ->
+                check(!cancelled()) { "Export cancelled" }
                 val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH_PT, PAGE_HEIGHT_PT, index + 1).create()
                 val pdfPage = doc.startPage(pageInfo)
                 val canvas = pdfPage.canvas
@@ -45,7 +48,9 @@ class PdfSceneExporter(
                 val ink = snap.strokes.filter { it.brush != BrushKind.ERASER }
                 renderer.drawPage(canvas, viewport, pageForDraw, ink)
                 doc.finishPage(pdfPage)
+                progress(index + 1)
             }
+            check(!cancelled()) { "Export cancelled" }
             doc.writeTo(out)
             doc.close()
             ExportResult.Ok(pageCount = pages.size, widthPt = PAGE_WIDTH_PT, heightPt = PAGE_HEIGHT_PT)

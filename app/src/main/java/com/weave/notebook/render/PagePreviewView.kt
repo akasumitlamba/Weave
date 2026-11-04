@@ -20,6 +20,8 @@ class PagePreviewView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
+    var sourceIndicator: android.graphics.RectF? = null
+    var onSelectRegion: ((Float,Float)->Unit)? = null
     private val renderer = PageCanvasRenderer()
     val viewport = ViewportTransform()
 
@@ -46,9 +48,21 @@ class PagePreviewView @JvmOverloads constructor(
         }
     }
 
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        val select=onSelectRegion ?: return super.onTouchEvent(event)
+        if(event.actionMasked==android.view.MotionEvent.ACTION_DOWN || event.actionMasked==android.view.MotionEvent.ACTION_MOVE) {
+            val p=viewport.screenToPage(event.x,event.y);select(p[0],p[1]);return true
+        }
+        return true
+    }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(ContextCompat.getColor(context, R.color.workspace_bg))
         renderer.drawPage(canvas, viewport, page, strokes)
+        sourceIndicator?.let {r->
+            val a=viewport.pageToScreen(r.left,r.top);val b=viewport.pageToScreen(r.right,r.bottom)
+            val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {color=0xFF087F83.toInt();style=android.graphics.Paint.Style.STROKE;strokeWidth=2f}
+            canvas.drawRect(a[0],a[1],b[0],b[1],paint)
+        }
     }
 }

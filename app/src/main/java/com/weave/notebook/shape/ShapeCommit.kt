@@ -11,7 +11,7 @@ import com.weave.notebook.model.StrokeSample
 object ShapeCommit {
     fun replaceWithShape(raw: StrokeRecord, candidate: ShapeCandidate): Pair<StrokeRecord, EditorCommand.ReplaceStroke> {
         val fittedSamples = samplesForShape(candidate)
-        val fitted = raw.copy(samples = fittedSamples, fittedShape = candidate.shape)
+        val fitted = raw.copy(samples = fittedSamples, fittedShape = candidate.shape, rawSamples = raw.samples)
         return fitted to EditorCommand.ReplaceStroke(before = raw, after = fitted)
     }
 

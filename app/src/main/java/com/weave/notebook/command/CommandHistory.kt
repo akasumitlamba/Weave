@@ -107,3 +107,37 @@ object StrokeEraser {
         return hypot(px - (x1 + t * dx), py - (y1 + t * dy))
     }
 }
+
+/** Page-space grid narrows whole-stroke erasing; interpolates between sparse input samples. */
+object EraserPath {
+    fun hitIds(strokes: List<StrokeRecord>, path: List<com.weave.notebook.model.StrokeSample>, radius: Float): Set<String> {
+        if(path.isEmpty()) return emptySet()
+        val cells=HashMap<Pair<Int,Int>,MutableList<StrokeRecord>>()
+        val cellSize=16f
+        strokes.forEach {s->
+            if(s.samples.isNotEmpty()) {
+                val margin=s.widthMm/2
+                val left=kotlin.math.floor((s.samples.minOf {it.xMm}-margin)/cellSize).toInt()
+                val right=kotlin.math.floor((s.samples.maxOf {it.xMm}+margin)/cellSize).toInt()
+                val top=kotlin.math.floor((s.samples.minOf {it.yMm}-margin)/cellSize).toInt()
+                val bottom=kotlin.math.floor((s.samples.maxOf {it.yMm}+margin)/cellSize).toInt()
+                for(x in left..right)for(y in top..bottom)cells.getOrPut(x to y) {mutableListOf()}.add(s)
+            }
+        }
+        val removed=HashSet<String>()
+        fun hit(x:Float,y:Float) {
+            val candidates=LinkedHashSet<StrokeRecord>()
+            for(cx in kotlin.math.floor((x-radius)/cellSize).toInt()..kotlin.math.floor((x+radius)/cellSize).toInt())
+                for(cy in kotlin.math.floor((y-radius)/cellSize).toInt()..kotlin.math.floor((y+radius)/cellSize).toInt())
+                    cells[cx to cy]?.let {candidates.addAll(it)}
+            val remaining=candidates.filter {it.strokeId !in removed}.toMutableList()
+            while(true) {val s=StrokeEraser.hitTest(remaining,x,y,radius)?:break;removed.add(s.strokeId);remaining.remove(s)}
+        }
+        hit(path[0].xMm,path[0].yMm)
+        path.zipWithNext().forEach { (a,b)->
+            val n=kotlin.math.ceil(kotlin.math.hypot(b.xMm-a.xMm,b.yMm-a.yMm)/maxOf(0.25f,radius/2)).toInt().coerceAtLeast(1)
+            for(i in 1..n) {val t=i.toFloat()/n;hit(a.xMm+(b.xMm-a.xMm)*t,a.yMm+(b.yMm-a.yMm)*t)}
+        }
+        return removed
+    }
+}

@@ -66,6 +66,20 @@ class ViewportTransform(
         rebuild()
     }
 
+    fun restore(zoom: Float, panX: Float, panY: Float) {
+        this.zoom = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        panXPx = panX; panYPx = panY
+        clampPan(); rebuild()
+    }
+
+    fun showRegion(leftMm: Float, topMm: Float, widthMm: Float, heightMm: Float) {
+        val desired = min(viewWidthPx / widthMm, viewHeightPx / heightMm)
+        zoom = desired / fitScale()
+        panXPx = (pageWidthMm/2 - leftMm - widthMm/2) * desired
+        panYPx = (pageHeightMm/2 - topMm - heightMm/2) * desired
+        rebuild()
+    }
+
     fun fitPage() {
         zoom = 1f
         panXPx = 0f

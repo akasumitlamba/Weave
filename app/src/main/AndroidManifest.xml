@@ -5,7 +5,7 @@
 
     <application
         android:name=".WeaveApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -29,17 +29,7 @@
             android:windowSoftInputMode="stateAlwaysHidden"
             android:label="@string/default_note_title" />
 
-        <!-- Kept for debug deep-links / older evidence; not the launcher. -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:windowSoftInputMode="stateAlwaysHidden" />
+        <activity android:name=".ui.ExportActivity" android:exported="false" />
 
-        <!-- Debug input probe; activity self-finishes in non-debug builds. -->
-        <activity
-            android:name=".input.InputProbeActivity"
-            android:exported="false"
-            android:label="@string/input_probe_title"
-            android:windowSoftInputMode="stateAlwaysHidden" />
     </application>
 </manifest>

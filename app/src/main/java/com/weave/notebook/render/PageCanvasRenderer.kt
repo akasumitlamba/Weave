@@ -1,104 +1,70 @@
 package com.weave.notebook.render
 
-import android.graphics.Canvas
-import android.graphics.Matrix
-import android.graphics.Paint
-import android.graphics.Path
+import android.graphics.*
 import com.weave.notebook.geom.ViewportTransform
-import com.weave.notebook.model.BrushKind
-import com.weave.notebook.model.PageGeometry
-import com.weave.notebook.model.PageSpec
-import com.weave.notebook.model.PaperType
-import com.weave.notebook.model.StrokeRecord
+import com.weave.notebook.model.*
+import com.weave.notebook.smooth.*
 
-/**
- * Draws a page template and strokes in page millimeters via the viewport matrix.
- * Highlighters render as a single filled outline below opaque ink.
- */
+/** Same clipped vector scene for the editor, thumbnails, zoom strip and PDF. */
 class PageCanvasRenderer {
-
-    private val paperPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = 0xFFFFFFFF.toInt()
-    }
-    private val rulePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = 0xFFB0B6B8.toInt()
-    }
-    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = 0xFF252A2D.toInt()
-        strokeWidth = 0.2f
-    }
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
-    private val path = Path()
-
-    fun drawPage(
-        canvas: Canvas,
-        viewport: ViewportTransform,
-        page: PageSpec,
-        strokes: List<StrokeRecord>
-    ) {
-        canvas.save()
-        canvas.concat(viewport.copyPageToScreenMatrix())
-
-        canvas.drawRect(0f, 0f, page.widthMm, page.heightMm, paperPaint)
-        if (page.paperType == PaperType.RULED) {
-            drawRules(canvas, page)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap=Paint.Cap.ROUND; strokeJoin=Paint.Join.ROUND }
+    private data class Cached(val stroke: StrokeRecord, val path: Path, val bytes: Int)
+    private val paths = LinkedHashMap<String,Cached>(32,0.75f,true)
+    private var bytes = 0
+    private fun geometry(s: StrokeRecord): Path {
+        paths[s.strokeId]?.let { if(it.stroke === s) return it.path }
+        val level = when(s.smoothingVersion) { 0 -> SmoothingLevel.OFF; 2 -> SmoothingLevel.MEDIUM; else -> SmoothingLevel.LOW }
+        val smoother = StrokeSmoother(level)
+        val samples = if(s.fittedShape != null) s.samples else s.samples.map { smoother.filterLive(it) }
+        val path = strokePath(samples, s.fittedShape == null && level != SmoothingLevel.OFF)
+        paint.style=Paint.Style.STROKE; paint.strokeWidth=s.widthMm
+        val outline = Path()
+        paint.getFillPath(path,outline)
+        if(samples.size == 1 || samples.all { it.xMm==samples[0].xMm && it.yMm==samples[0].yMm }) {
+            outline.addCircle(samples.first().xMm,samples.first().yMm,s.widthMm/2,Path.Direction.CW)
         }
-        canvas.drawRect(0f, 0f, page.widthMm, page.heightMm, borderPaint)
-
-        val highlighters = strokes.filter { it.brush == BrushKind.HIGHLIGHTER }
-        val opaque = strokes.filter { it.brush != BrushKind.HIGHLIGHTER && it.brush != BrushKind.ERASER }
-        for (s in highlighters) drawHighlighter(canvas, s)
-        for (s in opaque) drawOpaqueStroke(canvas, s)
-
+        val cost = samples.size * 80 + 256
+        paths.remove(s.strokeId)?.let { bytes-=it.bytes }
+        if(cost <= 32*1024*1024) { paths[s.strokeId]=Cached(s,outline,cost); bytes+=cost }
+        val iterator=paths.entries.iterator()
+        while(bytes>32*1024*1024 && iterator.hasNext()) { bytes-=iterator.next().value.bytes; iterator.remove() }
+        return outline
+    }
+    fun drawPage(canvas: Canvas, viewport: ViewportTransform, page: PageSpec, strokes: List<StrokeRecord>, liveHighlighter: StrokeRecord? = null) {
+        canvas.save(); canvas.concat(viewport.copyPageToScreenMatrix())
+        canvas.clipRect(0f,0f,page.widthMm,page.heightMm)
+        paint.style=Paint.Style.FILL; paint.color=Color.WHITE
+        canvas.drawRect(0f,0f,page.widthMm,page.heightMm,paint)
+        if(page.paperType==PaperType.RULED) {
+            paint.style=Paint.Style.STROKE; paint.strokeWidth=0.13f; paint.color=0xFFD7E1E6.toInt()
+            var y=15f
+            while(y<page.heightMm-7.5f) { canvas.drawLine(0f,y,page.widthMm,y,paint); y+=page.ruleSpacingMm }
+            paint.color=0xFFEBC6C6.toInt(); canvas.drawLine(15f,0f,15f,page.heightMm,paint)
+        }
+        strokes.forEach { if(it.brush==BrushKind.HIGHLIGHTER) drawStroke(canvas,it) }
+        liveHighlighter?.let {drawStroke(canvas,it)}
+        strokes.forEach { if(it.brush!=BrushKind.HIGHLIGHTER && it.brush!=BrushKind.ERASER) drawStroke(canvas,it) }
         canvas.restore()
     }
-
-    private fun drawRules(canvas: Canvas, page: PageSpec) {
-        val spacing = page.ruleSpacingMm
-        val margin = PageGeometry.RULE_MARGIN_MM
-        rulePaint.strokeWidth = 0.15f
-        var y = margin
-        while (y < page.heightMm - margin * 0.5f) {
-            canvas.drawLine(0f, y, page.widthMm, y, rulePaint)
-            y += spacing
-        }
+    fun drawStroke(canvas: Canvas, stroke: StrokeRecord) {
+        if(stroke.samples.isEmpty()) return
+        val path=geometry(stroke)
+        paint.style=Paint.Style.FILL; paint.color=stroke.colorArgb
+        canvas.drawPath(path,paint)
     }
-
-    private fun drawOpaqueStroke(canvas: Canvas, stroke: StrokeRecord) {
-        if (stroke.samples.isEmpty()) return
-        strokePaint.style = Paint.Style.STROKE
-        strokePaint.color = stroke.colorArgb
-        strokePaint.strokeWidth = stroke.widthMm
-        path.reset()
-        val first = stroke.samples.first()
-        path.moveTo(first.xMm, first.yMm)
-        if (stroke.samples.size == 1) {
-            path.lineTo(first.xMm + 0.01f, first.yMm)
-        } else {
-            for (i in 1 until stroke.samples.size) {
-                val p = stroke.samples[i]
-                path.lineTo(p.xMm, p.yMm)
-            }
-        }
-        canvas.drawPath(path, strokePaint)
-    }
-
-    private fun drawHighlighter(canvas: Canvas, stroke: StrokeRecord) {
-        if (stroke.samples.isEmpty()) return
-        fillPaint.color = stroke.colorArgb
-        val outline = StrokeOutlineBuilder.buildFilledOutline(stroke.samples, stroke.widthMm)
-        canvas.drawPath(outline, fillPaint)
-    }
-
     fun identityMatrix(): Matrix = Matrix()
+    companion object {
+        fun strokePath(samples: List<StrokeSample>, smooth: Boolean): Path {
+            val p=Path(); if(samples.isEmpty()) return p
+            p.moveTo(samples[0].xMm,samples[0].yMm)
+            if(smooth && samples.size>2) {
+                for(i in 1 until samples.size) {
+                    val a=samples[i-1]; val b=samples[i]
+                    p.quadTo(a.xMm,a.yMm,(a.xMm+b.xMm)/2,(a.yMm+b.yMm)/2)
+                }
+                p.lineTo(samples.last().xMm,samples.last().yMm)
+            } else samples.drop(1).forEach { p.lineTo(it.xMm,it.yMm) }
+            return p
+        }
+    }
 }
