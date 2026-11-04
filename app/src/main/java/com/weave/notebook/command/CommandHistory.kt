@@ -111,10 +111,12 @@ object StrokeEraser {
 /** Page-space grid narrows whole-stroke erasing; interpolates between sparse input samples. */
 object EraserPath {
     fun hitIds(strokes: List<StrokeRecord>, path: List<com.weave.notebook.model.StrokeSample>, radius: Float): Set<String> {
-        if(path.isEmpty()) return emptySet()
-        val cells=HashMap<Pair<Int,Int>,MutableList<StrokeRecord>>()
-        val cellSize=16f
-        strokes.forEach {s->
+        return Index(strokes).hitIds(path,radius)
+    }
+    class Index(strokes:List<StrokeRecord>) {
+        private val cells=HashMap<Pair<Int,Int>,MutableList<StrokeRecord>>()
+        private val cellSize=16f
+        init {strokes.forEach {s->
             if(s.samples.isNotEmpty()) {
                 val margin=s.widthMm/2
                 val left=kotlin.math.floor((s.samples.minOf {it.xMm}-margin)/cellSize).toInt()
@@ -124,14 +126,16 @@ object EraserPath {
                 for(x in left..right)for(y in top..bottom)cells.getOrPut(x to y) {mutableListOf()}.add(s)
             }
         }
-        val removed=HashSet<String>()
+        }
+        fun hitIds(path:List<com.weave.notebook.model.StrokeSample>,radius:Float,alreadyRemoved:Set<String> = emptySet()):Set<String> {
+        if(path.isEmpty())return emptySet()
+        val removed=HashSet<String>(alreadyRemoved)
         fun hit(x:Float,y:Float) {
-            val candidates=LinkedHashSet<StrokeRecord>()
+            val candidates=LinkedHashMap<String,StrokeRecord>()
             for(cx in kotlin.math.floor((x-radius)/cellSize).toInt()..kotlin.math.floor((x+radius)/cellSize).toInt())
                 for(cy in kotlin.math.floor((y-radius)/cellSize).toInt()..kotlin.math.floor((y+radius)/cellSize).toInt())
-                    cells[cx to cy]?.let {candidates.addAll(it)}
-            val remaining=candidates.filter {it.strokeId !in removed}.toMutableList()
-            while(true) {val s=StrokeEraser.hitTest(remaining,x,y,radius)?:break;removed.add(s.strokeId);remaining.remove(s)}
+                    cells[cx to cy]?.forEach {if(it.strokeId !in removed)candidates[it.strokeId]=it}
+            candidates.values.forEach {s->if(StrokeEraser.hitTest(listOf(s),x,y,radius)!=null)removed.add(s.strokeId)}
         }
         hit(path[0].xMm,path[0].yMm)
         path.zipWithNext().forEach { (a,b)->
@@ -140,4 +144,5 @@ object EraserPath {
         }
         return removed
     }
+}
 }

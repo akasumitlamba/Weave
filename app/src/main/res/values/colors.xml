@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="splash_background">#F4F7F0</color>
     <!-- Visual language from handoff -->
-    <color name="workspace_bg">#F2F3F1</color>
+    <color name="workspace_bg">#F4F7F0</color>
     <color name="paper_white">#FFFFFF</color>
     <color name="charcoal">#252A2D</color>
-    <color name="teal_selection">#087F78</color>
+    <color name="teal_selection">#3F6650</color>
     <color name="guard_overlay">#80252A2D</color>
     <color name="ink_black">#FF000000</color>
     <color name="ink_blue">#FF1A5FB4</color>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Weave" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#A6D19A</item>
+        <item name="colorOnPrimary">#14380C</item>
+        <item name="colorPrimaryContainer">#2B5022</item>
+        <item name="colorOnPrimaryContainer">#C1EDB4</item>
+        <item name="colorSecondary">#B2CCC6</item>
+        <item name="colorOnSurface">#E1E7E2</item>
+        <item name="colorOnSurfaceVariant">#BACAC4</item>
+        <item name="colorSurface">#121810</item>
+        <item name="colorSurfaceContainer">#1E261C</item>
+        <item name="colorOutlineVariant">#3D4A44</item>
+        <item name="android:statusBarColor">#121810</item>
+        <item name="android:navigationBarColor">#121810</item>
+        <item name="android:windowBackground">#121810</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

@@ -16,7 +16,6 @@ import com.weave.notebook.guards.*
 import com.weave.notebook.smooth.SmoothingLevel
 import com.weave.notebook.tools.BrushCatalog
 import com.weave.notebook.render.PagePreviewView
-import com.weave.notebook.command.StrokeEraser
 import com.weave.notebook.ui.NativeUi.dp
 import java.util.UUID
 
@@ -34,14 +33,11 @@ class EditorActivity: AppCompatActivity() {
     private lateinit var options:LinearLayout
     private lateinit var status:TextView
     private lateinit var pageLabel:TextView
-    private lateinit var zoomLabel:TextView
     private lateinit var undo:Button
     private lateinit var redo:Button
-    private lateinit var writeButton:Button
-    private lateinit var navigateButton:Button
     private val prefs by lazy {getSharedPreferences("writing",0)}
     private var tool=ToolKind.PEN
-    private var write=true
+    private var fullscreen=false
     private var brush=BrushKind.PEN
     private var color=Color.BLACK
     private var strokeWidth=0.45f
@@ -56,14 +52,16 @@ class EditorActivity: AppCompatActivity() {
 
     override fun onCreate(state:Bundle?) {
         super.onCreate(state)
+        NativeUi.applyTheme(this)
         onBackPressedDispatcher.addCallback(this,object:androidx.activity.OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {leave()}
+            override fun handleOnBackPressed() {if(fullscreen)toggleFullscreen() else leave()}
         })
         window.statusBarColor=NativeUi.BG;window.navigationBarColor=NativeUi.BG
         val id=intent.getStringExtra(EXTRA_NOTE_ID) ?: state?.getString("noteId")
         if(id==null) {finish();return}
         tool=runCatching {ToolKind.valueOf(prefs.getString("tool","PEN")!!)}.getOrDefault(ToolKind.PEN)
-        write=state?.getBoolean("write") ?: (tool!=ToolKind.HAND)
+        if(tool==ToolKind.HAND)tool=ToolKind.PEN
+        fullscreen=state?.getBoolean("fullscreen")?:false
         shapes=prefs.getBoolean("shapes",false)
         smoothing=runCatching {SmoothingLevel.valueOf(prefs.getString("smoothing","LOW")!!)}.getOrDefault(SmoothingLevel.LOW)
         stripVisible=state?.getBoolean("strip")?:false;stripLeft=state?.getFloat("stripLeft")?:15f;stripTop=state?.getFloat("stripTop")?:40f
@@ -84,11 +82,17 @@ class EditorActivity: AppCompatActivity() {
         super.onSaveInstanceState(out);if(loading)return
         rememberViewport();out.putString("noteId",session.note.id);out.putInt("page",session.index)
         out.putFloat("zoom",session.zoom);out.putFloat("panX",session.panX);out.putFloat("panY",session.panY)
-        out.putBoolean("write",write);out.putBoolean("strip",stripVisible);out.putFloat("stripLeft",stripLeft);out.putFloat("stripTop",stripTop)
+        out.putBoolean("fullscreen",fullscreen);out.putBoolean("strip",stripVisible);out.putFloat("stripLeft",stripLeft);out.putFloat("stripTop",stripTop)
     }
     override fun onPause() {if(!loading) {canvas.cancelWork();strip.cancelWork();rememberViewport();saveGuard()};super.onPause()}
     private fun rememberViewport() {if(!loading && ::canvas.isInitialized) {session.zoom=canvas.viewport.zoom;session.panX=canvas.viewport.panXPx;session.panY=canvas.viewport.panYPx}}
     private fun build() {
+        window.attributes=window.attributes.apply {layoutInDisplayCutoutMode=if(fullscreen)android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES else android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT}
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window,!fullscreen)
+        androidx.core.view.WindowInsetsControllerCompat(window,window.decorView).apply {
+            systemBarsBehavior=androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if(fullscreen)hide(androidx.core.view.WindowInsetsCompat.Type.systemBars()) else show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
         root=NativeUi.column(this).apply {setBackgroundColor(NativeUi.BG)}
         val landscape=resources.configuration.screenWidthDp>resources.configuration.screenHeightDp
         val header=NativeUi.row(this).apply {setPadding(dp(10),dp(3),dp(10),dp(3))}
@@ -103,21 +107,44 @@ class EditorActivity: AppCompatActivity() {
         actions.addView(NativeUi.button(this,"Export PDF") {exportAfterSave=true;save()})
 
         header.addView(NativeUi.button(this,"⋮") {moreOptions()})
-        if(landscape) header.addView(actions) else {root.addView(header);root.addView(actions)}
-        if(landscape)root.addView(header)
+        if(!fullscreen) {
+            if(landscape) {header.addView(actions);root.addView(header)} else {root.addView(header);root.addView(actions)}
+        }
         tools=NativeUi.row(this).apply {setPadding(dp(2),dp(4),dp(2),0)}
         options=NativeUi.row(this).apply {setPadding(dp(2),0,dp(2),dp(4))}
-        val combined=NativeUi.row(this);combined.addView(tools);combined.addView(options)
-        if(landscape)combined.addView(Switch(this).apply {text="Hold shapes";isChecked=shapes;minHeight=dp(48);setPadding(dp(12),0,dp(8),0)
-            setOnCheckedChangeListener {_,checked->shapes=checked;prefs.edit().putBoolean("shapes",checked).apply();applyTool()}})
-        root.addView(NativeUi.scrollRow(this,combined))
+        if(fullscreen) {tools.orientation=LinearLayout.VERTICAL;options.orientation=LinearLayout.HORIZONTAL;options.gravity=Gravity.TOP}
+        else {
+            val combined=NativeUi.row(this);combined.addView(tools)
+            if(landscape)combined.addView(options)
+            combined.addView(Switch(this).apply {text="Hold shapes";isChecked=shapes;minHeight=dp(48);setPadding(dp(12),0,dp(8),0)
+                setOnCheckedChangeListener {_,checked->shapes=checked;prefs.edit().putBoolean("shapes",checked).apply();applyTool()}})
+            root.addView(NativeUi.scrollRow(this,combined))
+            if(!landscape)root.addView(NativeUi.scrollRow(this,options))
+        }
         val workspace=NativeUi.row(this)
         pageRail=NativeUi.column(this).apply {setPadding(dp(8),dp(8),dp(8),0)}
-        if(landscape) workspace.addView(ScrollView(this).apply {addView(pageRail)},LinearLayout.LayoutParams(dp(108),-1))
+        if(landscape && !fullscreen) workspace.addView(ScrollView(this).apply {addView(pageRail)},LinearLayout.LayoutParams(dp(108),-1))
+        if(fullscreen) {
+            val left=NativeUi.column(this).apply {gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(4),dp(8),dp(4),dp(8));setBackgroundColor(NativeUi.BG)}
+            left.addView(sideAction("Exit fullscreen") {toggleFullscreen()})
+            left.addView(tools);left.addView(View(this),LinearLayout.LayoutParams(1,0,1f))
+            listOf(undo,redo).forEach {button->actions.removeView(button);compact(button);left.addView(button)}
+            workspace.addView(left,LinearLayout.LayoutParams(dp(68),-1))
+        }
         canvas=InkCanvasView(this)
         workspace.addView(canvas,LinearLayout.LayoutParams(0,-1,1f))
+        if(fullscreen) {
+            val right=NativeUi.column(this).apply {setPadding(dp(4),dp(8),dp(4),dp(8));gravity=Gravity.CENTER_HORIZONTAL;setBackgroundColor(NativeUi.BG)}
+            right.addView(ScrollView(this).apply {addView(options)},LinearLayout.LayoutParams(-1,0,1f))
+            val lower=NativeUi.row(this)
+            lower.addView(sideAction("Fit") {canvas.cancelWork();canvas.viewport.fitPage();viewChanged()})
+            lower.addView(sideAction("Pages") {pageDialog()});right.addView(lower)
+            right.addView(sideAction("⋮") {moreOptions()})
+            (status.parent as? android.view.ViewGroup)?.removeView(status);status.textSize=11f;right.addView(status)
+            workspace.addView(right,LinearLayout.LayoutParams(dp(108),-1))
+        }
         root.addView(workspace,LinearLayout.LayoutParams(-1,0,1f))
-        stripBox=NativeUi.column(this).apply {background=NativeUi.rounded(Color.WHITE);visibility=if(stripVisible) View.VISIBLE else View.GONE}
+        stripBox=NativeUi.column(this).apply {background=NativeUi.rounded(NativeUi.SURFACE);visibility=if(stripVisible) View.VISIBLE else View.GONE}
         val stripActions=NativeUi.row(this)
         stripActions.addView(NativeUi.text(this,"Zoom writing",16f,true).apply {setPadding(dp(12),0,dp(8),0)})
         stripActions.addView(NativeUi.button(this,"←") {moveStrip(-20f,0f)})
@@ -131,18 +158,13 @@ class EditorActivity: AppCompatActivity() {
         if(!landscape)stripBox.addView(overview,LinearLayout.LayoutParams(-1,dp(72)))
         strip=InkCanvasView(this)
         stripBox.addView(strip,LinearLayout.LayoutParams(-1,dp(if(landscape) 150 else 200)))
-        root.addView(stripBox)
+        if(!fullscreen)root.addView(stripBox)
         val bottom=NativeUi.row(this).apply {setPadding(dp(6),dp(3),dp(6),dp(3))}
         pageLabel=NativeUi.text(this,"",14f).apply {minHeight=dp(48);gravity=Gravity.CENTER;setPadding(dp(6),0,dp(6),0);setOnClickListener {pageDialog()};contentDescription="Current page. Tap to change pages"};bottom.addView(pageLabel)
         bottom.addView(NativeUi.spacer(this))
-        bottom.addView(NativeUi.button(this,"−") {zoom(-0.25f)})
-        zoomLabel=NativeUi.text(this,"100%",14f);bottom.addView(zoomLabel)
-        bottom.addView(NativeUi.button(this,"＋") {zoom(0.25f)})
         bottom.addView(NativeUi.button(this,"Fit") {canvas.cancelWork();canvas.viewport.fitPage();viewChanged()}.apply {setOnLongClickListener {canvas.cancelWork();canvas.viewport.fitWidth();viewChanged();true}})
-        writeButton=NativeUi.button(this,"Write",true) {write=true;if(tool==ToolKind.HAND) selectTool(ToolKind.PEN) else applyTool()}
-        navigateButton=NativeUi.button(this,"Navigate") {write=false;applyTool()}
-        bottom.addView(writeButton);bottom.addView(navigateButton)
-        root.addView(bottom)
+        bottom.addView(NativeUi.button(this,"Fullscreen") {toggleFullscreen()})
+        if(!fullscreen)root.addView(bottom)
         setContentView(root)
         canvas.onViewport={viewChanged()}
         listOf(canvas,strip).forEach {v->
@@ -150,11 +172,8 @@ class EditorActivity: AppCompatActivity() {
                 changePage(current().copy(strokes=current().strokes+raw))
                 if(fitted!=null) changePage(current().copy(strokes=current().strokes.dropLast(1)+fitted))
             }
-            v.onErase={samples,radius->
-                val source=current().strokes
-                val ids=com.weave.notebook.command.EraserPath.hitIds(source,samples,radius)
-                if(ids.isNotEmpty()) changePage(current().copy(strokes=source.filter {it.strokeId !in ids}))
-            }
+            v.onErasePreview={ids->listOf(canvas,strip).forEach {it.erasedPreview=ids;it.invalidate()}}
+            v.onErase={ids->if(ids.isNotEmpty())changePage(current().copy(strokes=current().strokes.filter {it.strokeId !in ids}))}
             v.onShapeStatus={recognized->if(recognized)status.text="Shape recognized" else updateStatus()}
         }
         val guardEdge=runCatching {GuardEdge.valueOf(prefs.getString("guardEdge","BOTTOM")!!)}.getOrDefault(GuardEdge.BOTTOM)
@@ -164,32 +183,34 @@ class EditorActivity: AppCompatActivity() {
         renderTools();renderPage();updateStatus()
     }
     private fun current()=session.note.pages[session.index]
-    private fun selectTool(t:ToolKind) {canvas.cancelWork();strip.cancelWork();tool=t;write=t!=ToolKind.HAND;prefs.edit().putString("tool",t.name).apply();renderTools()}
+    private fun selectTool(t:ToolKind) {canvas.cancelWork();strip.cancelWork();tool=t;prefs.edit().putString("tool",t.name).apply();renderTools()}
     private fun renderTools() {
         tools.removeAllViews()
-        ToolKind.entries.forEach { t->
+        ToolKind.entries.filter {it!=ToolKind.HAND}.forEach { t->
             val label=when(t) {ToolKind.PEN->"Pen";ToolKind.MARKER->"Marker";ToolKind.HIGHLIGHTER->"Highlighter";ToolKind.ERASER->"Eraser";ToolKind.HAND->"Hand"}
-            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {setOnLongClickListener {selectTool(t);toolOptions();true}})
+            tools.addView(NativeUi.tool(this,label,t==tool) {selectTool(t)}.apply {if(fullscreen)layoutParams=LinearLayout.LayoutParams(dp(56),dp(66));setOnLongClickListener {selectTool(t);toolOptions();true}})
         }
         brush=when(tool) {ToolKind.MARKER->BrushKind.MARKER;ToolKind.HIGHLIGHTER->BrushKind.HIGHLIGHTER;ToolKind.ERASER->BrushKind.ERASER;else->BrushKind.PEN}
         strokeWidth=prefs.getFloat("width.$brush",BrushCatalog.defaultWidth(brush))
         color=prefs.getInt("color.$brush",BrushCatalog.colorsFor(brush).first())
         options.removeAllViews()
-        if(tool!=ToolKind.HAND) {
-            val widths=BrushCatalog.widthsFor(brush)
-            val visible=listOf(widths.first(),strokeWidth,widths.last()).distinct().sorted()
-            visible.forEachIndexed {i,w->options.addView(NativeUi.dot(this,"Width ${w} mm",NativeUi.TEXT,3+i*2,w==strokeWidth) {prefs.edit().putFloat("width.$brush",w).apply();renderTools()})}
-            if(brush!=BrushKind.ERASER) {
-                val colors=BrushCatalog.colorsFor(brush)
-                val names=if(brush==BrushKind.HIGHLIGHTER) listOf("Yellow","Pink","Green") else listOf("Black","Blue","Red","Green")
-                colors.forEachIndexed {i,c->options.addView(NativeUi.dot(this,names[i],c,10,c==color) {prefs.edit().putInt("color.$brush",c).apply();renderTools()})}
-            }
+        val widths=BrushCatalog.widthsFor(brush)
+        val widthGroup=if(fullscreen)NativeUi.column(this) else NativeUi.row(this)
+        val colorGroup=if(fullscreen)NativeUi.column(this) else NativeUi.row(this)
+        widthGroup.addView(NativeUi.text(this,"mm",11f).apply {gravity=Gravity.CENTER;setTextColor(NativeUi.MUTED);setPadding(dp(6),dp(4),dp(6),dp(4));contentDescription="Stroke width in millimetres"})
+        widths.forEach {w->widthGroup.addView(NativeUi.width(this,w,w==strokeWidth,w==BrushCatalog.defaultWidth(brush),widths.last()) {prefs.edit().putFloat("width.$brush",w).apply();renderTools()})}
+        options.addView(widthGroup)
+        if(brush!=BrushKind.ERASER) {
+            colorGroup.addView(NativeUi.text(this,"Color",11f).apply {gravity=Gravity.CENTER;setTextColor(NativeUi.MUTED);setPadding(dp(8),dp(4),dp(4),dp(4))})
+            val colors=BrushCatalog.colorsFor(brush)
+            val names=if(brush==BrushKind.HIGHLIGHTER)listOf("Yellow","Pink","Green") else listOf("Black","Blue","Red","Green")
+            colors.forEachIndexed {i,c->colorGroup.addView(NativeUi.dot(this,names[i],c,9,c==color) {prefs.edit().putInt("color.$brush",c).apply();renderTools()})}
+            options.addView(colorGroup)
         }
         applyTool()
     }
     private fun applyTool() {
-        listOf(canvas,strip).forEach {v->v.cancelWork();v.brush=brush;v.widthMm=strokeWidth;v.colorArgb=color;v.inkEnabled=write && tool!=ToolKind.HAND;v.holdShapes=shapes;v.pipeline.smoother.level=smoothing}
-        NativeUi.select(writeButton,write);NativeUi.select(navigateButton,!write)
+        listOf(canvas,strip).forEach {v->v.cancelWork();v.brush=brush;v.widthMm=strokeWidth;v.colorArgb=color;v.inkEnabled=true;v.holdShapes=shapes && !fullscreen;v.pipeline.smoother.level=smoothing}
     }
     private fun renderPage() {
         session.index=session.index.coerceIn(session.note.pages.indices)
@@ -205,7 +226,7 @@ class EditorActivity: AppCompatActivity() {
     private fun renderRail() {
         pageRail.removeAllViews()
         session.note.pages.forEachIndexed {i,p->
-            val holder=NativeUi.column(this).apply {setPadding(dp(4),dp(4),dp(4),dp(4));background=NativeUi.rounded(if(i==session.index)0xFFBEE0E1.toInt() else Color.TRANSPARENT)}
+            val holder=NativeUi.column(this).apply {setPadding(dp(4),dp(4),dp(4),dp(4));background=NativeUi.rounded(if(i==session.index)NativeUi.SELECTED else Color.TRANSPARENT)}
             holder.addView(PagePreviewView(this).apply {page=p.spec;strokes=p.strokes;contentDescription="Page ${i+1}";setOnClickListener {switchPage(i)};setOnLongClickListener {pageMenu(i);true}},LinearLayout.LayoutParams(dp(76),dp(108)))
             holder.addView(NativeUi.text(this,"${i+1}",13f).apply {gravity=Gravity.CENTER})
             pageRail.addView(holder)
@@ -232,7 +253,7 @@ class EditorActivity: AppCompatActivity() {
             }
         }
     }
-    private fun updateStatus() {if(!::session.isInitialized || !::status.isInitialized)return;status.text=when {session.failed->"Save failed · Retry";session.saved<session.revision->"Saving…";else->"Saved"};status.setTextColor(if(session.failed)0xFFB3261E.toInt() else NativeUi.MUTED)}
+    private fun updateStatus() {if(!::session.isInitialized || !::status.isInitialized)return;status.text=when {session.failed->"Save failed · Retry";session.saved<session.revision->"Saving…";else->"Saved"};status.setTextColor(if(session.failed)NativeUi.ERROR else NativeUi.MUTED)}
     private fun switchPage(i:Int) {if(i !in session.note.pages.indices)return;canvas.cancelWork();strip.cancelWork();session.index=i;canvas.viewport.fitPage();renderPage();viewChanged()}
     private fun addPage() {val p=NotebookPage(PageSpec(UUID.randomUUID().toString(),current().spec.paperType,current().spec.ruleSpacingMm));session.index=session.note.pages.size;edit(session.note.copy(pages=session.note.pages+p))}
     private fun pageDialog() {
@@ -258,11 +279,16 @@ class EditorActivity: AppCompatActivity() {
             changePage(current().copy(spec=current().spec.copy(paperType=if(i==0)PaperType.PLAIN else PaperType.RULED,ruleSpacingMm=when(i){1->6f;3->10f;else->8f})))
         }.show()
     }
-    private fun zoom(delta:Float) {canvas.cancelWork();canvas.viewport.setZoom(canvas.viewport.zoom+delta,canvas.width/2f,canvas.height/2f);viewChanged()}
-    private fun viewChanged() {zoomLabel.text="${(canvas.viewport.zoom*100).toInt()}%";canvas.invalidate();rememberViewport()}
+    private fun viewChanged() {canvas.invalidate();rememberViewport()}
+    private fun compact(button:Button):Button = button.apply {text="";compoundDrawablePadding=0;setPadding(dp(12),0,dp(12),0);layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
+    private fun sideAction(label:String,click:()->Unit)=compact(NativeUi.button(this,label,click=click))
+    private fun toggleFullscreen() {
+        canvas.cancelWork();strip.cancelWork();rememberViewport();saveGuard()
+        fullscreen=!fullscreen;build()
+    }
     private fun toggleStrip() {canvas.cancelWork();strip.cancelWork();stripVisible=!stripVisible;stripBox.visibility=if(stripVisible)View.VISIBLE else View.GONE;canvas.post {updateStrip()}}
     private fun moveStrip(dx:Float,dy:Float) {strip.cancelWork();stripLeft=(stripLeft+dx).coerceIn(0f,120f);stripTop=(stripTop+dy).coerceIn(0f,267f);updateStrip()}
-    private fun updateStrip() {if(!::strip.isInitialized)return;val r=RectF(stripLeft,stripTop,stripLeft+90f,stripTop+30f);canvas.sourceIndicator=if(stripVisible)r else null;overview.sourceIndicator=r;overview.invalidate();strip.region(r);canvas.invalidate()}
+    private fun updateStrip() {if(!::strip.isInitialized)return;val r=RectF(stripLeft,stripTop,stripLeft+90f,stripTop+30f);canvas.sourceIndicator=if(stripVisible && !fullscreen)r else null;overview.sourceIndicator=r;overview.invalidate();strip.region(r);canvas.invalidate()}
     private fun saveGuard() {
         if(!::canvas.isInitialized)return
         val g=canvas.palmGuards.guard
@@ -285,8 +311,11 @@ class EditorActivity: AppCompatActivity() {
         }.show()
     }
     private fun moreOptions() {
-        AlertDialog.Builder(this).setTitle("Writing options").setItems(arrayOf("${if(shapes) "✓ " else ""}Hold shapes","Zoom writing","Palm guard / writing window","Change paper","Smoothing","All tool widths")) {_,i->
-            when(i) {0->{shapes=!shapes;prefs.edit().putBoolean("shapes",shapes).apply();applyTool()};1->toggleStrip();2->guardDialog();3->paperDialog();4->settings();5->toolOptions()}
+        val choices=if(fullscreen)arrayOf("Palm guard / writing window","Change paper","Smoothing","All tool widths")
+            else arrayOf("${if(shapes) "✓ " else ""}Hold shapes","Zoom writing","Palm guard / writing window","Change paper","Smoothing","All tool widths")
+        AlertDialog.Builder(this).setTitle("Writing options").setItems(choices) {_,i->
+            val action=if(fullscreen)i+2 else i
+            when(action) {0->{shapes=!shapes;prefs.edit().putBoolean("shapes",shapes).apply();applyTool()};1->toggleStrip();2->guardDialog();3->paperDialog();4->settings();5->toolOptions()}
         }.show()
     }
     private fun toolOptions() {

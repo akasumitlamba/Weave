@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Owl silhouette and negative-space face; fully inside the circular adaptive safe zone. -->
+    <group android:scaleX="0.74" android:scaleY="0.74" android:pivotX="54" android:pivotY="54">
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+            android:pathData="M27,20 C38,25 41,19 54,26 C66,20 72,25 81,20 C82,26 78,30 77,32 C80,44 81,48 81,56 C87,69 79,80 73,88 C54,89 31,86 27,75 C22,67 28,46 30,33 C26,29 25,25 27,20 Z M43,32 A11,11 0,1 0,43,54 A11,11 0,1 0,43,32 Z M65,32 A11,11 0,1 0,65,54 A11,11 0,1 0,65,32 Z M37,41 C40,45 44,46 48,44 C47,49 42,51 38,47 C37,45 37,43 37,41 Z M60,44 C65,46 69,44 71,41 C74,46 70,50 66,49 C63,49 61,47 60,44 Z M28,59 C46,66 62,67 76,85 C62,70 37,75 28,59 Z M30,73 C40,84 60,85 72,87 C57,81 43,85 30,73 Z" />
+    </group>
+</vector>

@@ -15,6 +15,7 @@
 
         <activity
             android:name=".ui.LibraryActivity"
+            android:theme="@style/Theme.Weave.Starting"
             android:exported="true"
             android:windowSoftInputMode="stateAlwaysHidden">
             <intent-filter>

@@ -8,6 +8,7 @@ import android.app.Application
 class WeaveApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        com.google.android.material.color.DynamicColors.applyToActivitiesIfAvailable(this)
         com.weave.notebook.data.NotebookIO.database = com.weave.notebook.data.NotebookDatabase(this)
     }
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Instrumentation exercises the same theme attribute pipeline with a known non-brand accent. -->
+    <style name="ThemeOverlay.Weave.PaletteVerification" parent="">
+        <item name="colorPrimary">#7350A4</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#EDDDFF</item>
+        <item name="colorSurface">#FCF8FF</item>
+        <item name="colorSurfaceContainer">#F2EAF6</item>
+        <item name="colorOnSurface">#201A25</item>
+        <item name="colorOnSurfaceVariant">#67596E</item>
+        <item name="colorOutlineVariant">#D0BEDC</item>
+    </style>
+</resources>
