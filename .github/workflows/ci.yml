@@ -82,16 +82,21 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      # Uploads are best-effort: artifact storage quota must not fail green builds.
       - name: Upload debug APK
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: weave-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          retention-days: 3
 
       - name: Upload lint results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: weave-lint-results
           path: app/build/reports/lint-results-debug.*
           if-no-files-found: ignore
+          retention-days: 3
